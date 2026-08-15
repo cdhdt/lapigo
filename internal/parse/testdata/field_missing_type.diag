@@ -1,0 +1,4 @@
+lapigo.yaml:4:7: field "id" has no `type`
+   4 |       id: { pk: true }
+     |       ^^
+   add a `type:` key, e.g. `type: string`

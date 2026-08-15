@@ -1,0 +1,8 @@
+lapigo.yaml:2:3: entity "article" has no field marked `pk: true`
+   2 |   article:
+     |   ^^^^^^^
+   mark exactly one field `pk: true`
+
+lapigo.yaml:4:11: field `id` must be a mapping, found a string
+   4 |       id: uuid
+     |           ^^^^

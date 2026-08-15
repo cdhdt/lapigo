@@ -1,0 +1,3 @@
+lapigo.yaml:5:7: mapping key "id" already defined at [4:7]
+   5 |       id: { type: string }
+     |       ^^

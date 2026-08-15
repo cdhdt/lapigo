@@ -1,0 +1,9 @@
+lapigo.yaml:4:7: entity "article" has 2 fields marked `pk: true`, want exactly 1
+   4 |       id: { type: uuid, pk: true }
+     |       ^^
+   exactly one field may be marked `pk: true`
+
+lapigo.yaml:5:7: entity "article" has 2 fields marked `pk: true`, want exactly 1
+   5 |       other_id: { type: uuid, pk: true }
+     |       ^^^^^^^^
+   exactly one field may be marked `pk: true`

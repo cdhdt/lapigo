@@ -1,0 +1,4 @@
+lapigo.yaml:5:22: unknown type "sting"
+   5 |       title: { type: sting }
+     |                      ^^^^^
+   did you mean `string`?

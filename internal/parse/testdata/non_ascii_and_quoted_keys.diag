@@ -1,0 +1,19 @@
+lapigo.yaml:5:7: field "café" has no `type`
+   5 |       café: { pk: false }
+     |       ^^^^
+   add a `type:` key, e.g. `type: string`
+
+lapigo.yaml:5:7: field name "café" is not a valid identifier
+   5 |       café: { pk: false }
+     |       ^^^^
+   identifiers must start with a letter or underscore, and contain only letters, digits, and underscores
+
+lapigo.yaml:6:7: field "weird key" has no `type`
+   6 |       "weird key": { pk: false }
+     |       ^^^^^^^^^^^
+   add a `type:` key, e.g. `type: string`
+
+lapigo.yaml:6:7: field name "weird key" is not a valid identifier
+   6 |       "weird key": { pk: false }
+     |       ^^^^^^^^^^^
+   identifiers must start with a letter or underscore, and contain only letters, digits, and underscores

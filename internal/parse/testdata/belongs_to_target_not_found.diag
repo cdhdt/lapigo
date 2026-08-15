@@ -1,0 +1,4 @@
+lapigo.yaml:5:42: belongsTo target "usr" does not exist
+   5 |       author: { type: belongsTo, target: usr }
+     |                                          ^^^
+   did you mean `user`?

@@ -1,0 +1,12 @@
+# A belongsTo carrying the same options a scalar field accepts. "an article
+# must have an author" is the single most common shape in a real schema, and
+# every one of these option branches was uncovered until this fixture existed.
+entities:
+  article:
+    fields:
+      id:     { type: uuid, pk: true }
+      author: { type: belongsTo, target: user, required: true, immutable: true, on_delete: cascade }
+      editor: { type: belongsTo, target: user, unique: true, readonly: true, on_delete: set_null }
+  user:
+    fields:
+      id: { type: uuid, pk: true }

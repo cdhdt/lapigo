@@ -217,6 +217,14 @@ output must show a before/after sample of the generated code.
 
 Never claim a test passes without having run it and read the output.
 
+Two mechanical traps that have already cost us:
+
+- **Use `go test -count=1`.** Go caches test results by package content. A cached
+  `ok` after a change you made in another package looks exactly like a real pass.
+- **Run `make check`, and check that CI is green before merging.** `make check`
+  runs what CI runs, in the same order. Local verification that skips a CI step
+  is how a red pipeline reaches `develop` unnoticed.
+
 ### Assert on exact values, never on substrings
 
 This rule is here because ignoring it already cost us. An adversarial review

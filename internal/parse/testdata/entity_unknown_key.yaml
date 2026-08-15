@@ -1,0 +1,4 @@
+entities:
+  article:
+    feilds:
+      id: { type: uuid, pk: true }

@@ -1,0 +1,4 @@
+lapigo.yaml:5:59: unknown on_delete value "nullify"
+   5 |       author: { type: belongsTo, target: user, on_delete: nullify }
+     |                                                           ^^^^^^^
+   valid values are `restrict`, `cascade`, `set_null`

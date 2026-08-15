@@ -1,0 +1,8 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      author: { type: belongsTo, target: user, on_delete: nullify }
+  user:
+    fields:
+      id: { type: uuid, pk: true }

@@ -378,9 +378,18 @@ offset**, not a byte offset, and must never index a `[]byte`.
 ### 4.4 One diagnostic type, accumulate, sort, print once
 
 `*yaml.SyntaxError` is converted to the same `Diagnostic` the validators
-produce, so a file with a syntax typo and a semantic error prints both, in
-source order, in one format. Validators append and keep going; nothing stops at
-the first error. This is the `go/scanner.ErrorList` shape.
+produce, so both render in one format, sorted together by position. Validators
+append and keep going; nothing stops at the first error. This is the
+`go/scanner.ErrorList` shape.
+
+An earlier revision claimed a file containing a syntax typo *and* a semantic
+error would print both. **That is not achievable, and the claim was wrong.**
+goccy returns a nil `*ast.File` on any syntax error — there is no partial AST to
+walk, so no semantic diagnostic can exist for that file. The guarantee that
+holds, and that is tested, is the *rendering* one: whatever their origin,
+diagnostics interleave and sort into one report. A syntax error therefore ends
+parsing for that file, and the user fixes it before seeing anything else. That
+is the same contract a compiler offers, and it is honest.
 
 Column arithmetic is in runes throughout, converted only at render time. An
 accented identifier is enough to misplace a caret computed in bytes, and there

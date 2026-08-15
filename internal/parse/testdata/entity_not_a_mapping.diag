@@ -1,0 +1,3 @@
+lapigo.yaml:2:12: entity `article` must be a mapping, found an integer
+   2 |   article: 3
+     |            ^

@@ -1,0 +1,4 @@
+lapigo.yaml:6:25: sort key "id" direction conflicts with the rest of the sort spec
+   6 |     sort: [-created_at, id]
+     |                         ^^
+   mixed-direction sorts are deferred to phase 1.5; make every key's direction match the spec's

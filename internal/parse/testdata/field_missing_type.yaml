@@ -1,0 +1,4 @@
+entities:
+  article:
+    fields:
+      id: { pk: true }

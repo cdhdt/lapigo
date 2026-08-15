@@ -1,0 +1,9 @@
+lapigo.yaml:2:3: entity "article" has no field marked `pk: true`
+   2 |   article:
+     |   ^^^^^^^
+   mark exactly one field `pk: true`
+
+lapigo.yaml:4:30: unknown key "requird" in field `title`
+   4 |       title: { type: string, requird: true }
+     |                              ^^^^^^^
+   did you mean `required`?
