@@ -1,0 +1,9 @@
+lapigo.yaml:2:3: entity "article" has no `fields`
+   2 |   article:
+     |   ^^^^^^^
+   add a `fields:` mapping with at least a primary key
+
+lapigo.yaml:2:3: entity "article" has no field marked `pk: true`
+   2 |   article:
+     |   ^^^^^^^
+   mark exactly one field `pk: true`

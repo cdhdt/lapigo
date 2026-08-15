@@ -1,0 +1,8 @@
+lapigo.yaml:2:3: entity "article" has no field marked `pk: true`
+   2 |   article:
+     |   ^^^^^^^
+   mark exactly one field `pk: true`
+
+lapigo.yaml:3:13: entity `article` `fields` must be a mapping, found a sequence
+   3 |     fields: [a, b]
+     |             ^

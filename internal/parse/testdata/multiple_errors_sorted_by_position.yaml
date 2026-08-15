@@ -1,0 +1,9 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      title: { type: sting }
+  user:
+    fields:
+      id: { type: uuid, pk: true }
+      bio: { typo: text }

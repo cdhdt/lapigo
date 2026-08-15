@@ -1,0 +1,8 @@
+lapigo.yaml:1:1: unknown key "version" in the schema file
+   1 | version: 1
+     | ^^^^^^^
+
+lapigo.yaml:1:8: schema file has no `entities`
+   1 | version: 1
+     |        ^
+   add a top-level `entities:` mapping

@@ -1,0 +1,3 @@
+lapigo.yaml:5:35: field `title` `max` must be an integer, found a string
+   5 |       title: { type: string, max: "two hundred" }
+     |                                   ^^^^^^^^^^^^^

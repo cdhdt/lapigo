@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      café: { pk: false }
+      "weird key": { pk: false }

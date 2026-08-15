@@ -1,0 +1,5 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+    sort: 3

@@ -1,0 +1,4 @@
+lapigo.yaml:1:11: `entities` has no members
+   1 | entities: {}
+     |           ^
+   declare at least one entity

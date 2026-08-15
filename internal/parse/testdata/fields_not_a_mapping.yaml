@@ -1,0 +1,3 @@
+entities:
+  article:
+    fields: [a, b]

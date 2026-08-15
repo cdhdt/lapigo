@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      created_at: { type: timestamp, required: true }
+    sort: [-created_at, id]

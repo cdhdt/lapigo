@@ -1,0 +1,7 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+  article:
+    fields:
+      id: { type: uuid, pk: true }

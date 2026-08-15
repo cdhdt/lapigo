@@ -1,0 +1,14 @@
+lapigo.yaml:5:22: unknown type "sting"
+   5 |       title: { type: sting }
+     |                      ^^^^^
+   did you mean `string`?
+
+lapigo.yaml:9:7: field "bio" has no `type`
+   9 |       bio: { typo: text }
+     |       ^^^
+   add a `type:` key, e.g. `type: string`
+
+lapigo.yaml:9:14: unknown key "typo" in field `bio`
+   9 |       bio: { typo: text }
+     |              ^^^^
+   did you mean `type`?

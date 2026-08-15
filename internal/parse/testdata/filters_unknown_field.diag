@@ -1,0 +1,3 @@
+lapigo.yaml:5:15: filter "nonexistent" is not a field of entity "article"
+   5 |     filters: [nonexistent]
+     |               ^^^^^^^^^^^
