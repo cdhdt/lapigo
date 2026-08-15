@@ -19,7 +19,9 @@ of your time rather than a judgement on your idea.
 1. Branch from `develop`: `feat/<short-name>`, `fix/<short-name>`, or
    `docs/<short-name>`.
 2. Write the failing test first. This project is test-driven, and the parser's
-   error messages are part of its public contract — assert on them.
+   error messages are part of its public contract — assert on their **exact**
+   text. `CLAUDE.md`'s testing section explains why substring assertions get
+   rejected here, with the numbers from the review that taught us.
 3. Keep `gofmt`, `go vet`, and `staticcheck` clean.
 4. Open a pull request **against `develop`**, never against `main`.
 
