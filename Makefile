@@ -32,7 +32,10 @@ vet:
 lint:
 	$(GO) run honnef.co/go/tools/cmd/staticcheck@2025.1.1 $(PKGS)
 
-check: fmt-check vet test-race
+# check must run everything CI runs, in the same order. It did not include
+# lint, so a staticcheck failure reached develop with a green local check and a
+# red pipeline nobody looked at. If CI gains a step, it gains one here too.
+check: fmt-check vet lint test-race build
 
 clean:
 	rm -rf bin
