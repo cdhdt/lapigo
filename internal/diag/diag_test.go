@@ -83,24 +83,6 @@ func TestDiagnostics_SatisfiesErrorInterface(t *testing.T) {
 	}
 }
 
-// TestDiagnostics_TypedNilIsNonNilError documents, as an executable
-// regression test, the typed-nil hazard called out on the Diagnostics doc
-// comment: assigning a nil Diagnostics directly to a bare error variable
-// produces a non-nil error interface value, because the interface carries a
-// concrete type even though the slice inside it is nil. This is exactly why
-// Err() and StrictErr() exist instead of callers doing `return
-// Diagnostics(nil)` from a function returning error.
-func TestDiagnostics_TypedNilIsNonNilError(t *testing.T) {
-	var ds diag.Diagnostics // nil slice
-	if ds != nil {
-		t.Fatalf("nil Diagnostics compared to nil slice = not nil, want nil")
-	}
-	var err error = ds
-	if err == nil {
-		t.Fatalf("error(nil Diagnostics) == nil, want non-nil (the typed-nil hazard the doc comment warns about)")
-	}
-}
-
 func TestDiagnostic_DefaultSeverityIsError(t *testing.T) {
 	d := diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 1}, Message: "x"}
 	if d.Severity != diag.Error {

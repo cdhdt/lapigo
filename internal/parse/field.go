@@ -1,6 +1,8 @@
 package parse
 
 import (
+	"sort"
+
 	"github.com/goccy/go-yaml/ast"
 
 	"github.com/cdhdt/lapigo/internal/ir"
@@ -39,12 +41,18 @@ var fieldTypeKeywords = map[string]ir.FieldType{
 // distance suggestion draws from for an unrecognised `type:` value --
 // every ir.FieldType keyword plus "belongsTo", since a typo of either is
 // equally plausible ("blongsTo", "sting").
+//
+// Sorted, not left in map iteration order -- see endpointKeywordNames' doc
+// comment for why an unsorted, map-derived vocabulary makes suggest's
+// output depend on process-randomised map order.
 var typeKeywordSuggestions = func() []string {
 	out := make([]string, 0, len(fieldTypeKeywords)+1)
 	for k := range fieldTypeKeywords {
 		out = append(out, k)
 	}
-	return append(out, "belongsTo")
+	out = append(out, "belongsTo")
+	sort.Strings(out)
+	return out
 }()
 
 // onDeleteKeywords maps every YAML `on_delete:` keyword (spec §3.1) to the
@@ -64,6 +72,8 @@ var onDeleteKeywords = map[string]string{
 // produces an ir.Relation, not (only) an ir.Field, and needs the two-pass
 // target resolution buildField has no part in.
 func (r *resolver) buildField(name source.At[string], entityGoName string, body ast.Node) *ir.Field {
+	r.requireExportableName(name, "field name")
+
 	m, ok := r.requireMapping(body, fieldContext(name.Value))
 	if !ok {
 		return nil
@@ -79,6 +89,8 @@ func (r *resolver) buildField(name source.At[string], entityGoName string, body 
 
 	var required, pk bool
 	var typeSeen bool
+	var maxSeen, valuesSeen bool
+	var maxAt, valuesAt source.At[string]
 
 	for _, e := range entries {
 		switch e.Key.Value {
@@ -135,6 +147,15 @@ func (r *resolver) buildField(name source.At[string], entityGoName string, body 
 				f.Version = b.Value
 			}
 		case "max":
+			// Whether `max:` is even meaningful for this field's type can
+			// only be decided once the whole mapping has been walked --
+			// `type:` is not guaranteed to appear before `max:` in the
+			// written YAML -- so that check, and the values: one below it,
+			// happen once after this loop, not here. The range check
+			// (max must be positive) does not depend on type and is
+			// checked immediately, at the token that carries the position.
+			maxSeen = true
+			maxAt = e.Key
 			i, ok := r.requireInt(e.Value, fieldContext(name.Value)+" `max`")
 			if ok {
 				v, ok := intNodeValue(i)
@@ -142,11 +163,16 @@ func (r *resolver) buildField(name source.At[string], entityGoName string, body 
 					r.addAt(atOf(i.Token.Value, i.GetToken()), "", "%s `max` is out of range", fieldContext(name.Value))
 					continue
 				}
+				if v <= 0 {
+					r.addAt(atOf(i.Token.Value, i.GetToken()), "", "%s `max` must be a positive integer, found %d", fieldContext(name.Value), v)
+					continue
+				}
 				f.Max = &v
 			}
 		case "values":
+			valuesSeen = true
+			valuesAt = e.Key
 			f.EnumValues = r.buildEnumValues(e.Value, name.Value)
-			f.EnumGoType = entityGoName + goName(name.Value)
 		case "default":
 			f.Default = r.buildDefault(e.Value, name.Value)
 		case "target", "on_delete":
@@ -161,6 +187,37 @@ func (r *resolver) buildField(name source.At[string], entityGoName string, body 
 
 	if !typeSeen {
 		r.addAt(name, "add a `type:` key, e.g. `type: string`", "field %q has no `type`", name.Value)
+	}
+
+	// `max:` and `values:` are meaningful for exactly one type each (spec
+	// §3.1); on any other type they are accepted text that means nothing --
+	// `max: -1` on an int field, `values:` on a string field setting
+	// EnumGoType with nothing that will ever read it. Checked here, once
+	// f.Type is fully known regardless of where `type:` fell in the
+	// mapping, rather than inline in the switch above.
+	if maxSeen && f.Type != ir.FieldTypeString {
+		r.addAt(maxAt, "`max` only applies to `type: string`",
+			"key %q is not valid on a field of type %q", maxAt.Value, fieldTypeName(f.Type))
+		f.Max = nil
+	}
+	if valuesSeen && f.Type != ir.FieldTypeEnum {
+		r.addAt(valuesAt, "`values` only applies to `type: enum`",
+			"key %q is not valid on a field of type %q", valuesAt.Value, fieldTypeName(f.Type))
+		f.EnumValues = nil
+	}
+	if f.Type == ir.FieldTypeEnum {
+		if len(f.EnumValues) == 0 {
+			// EnumGoType is deliberately left unset ("") in this branch,
+			// not just EnumValues empty: a diagnostic here means the schema
+			// is discarded (see Parse), but leaving EnumGoType at its zero
+			// value keeps this field from ever looking like a validly
+			// resolved enum to anything that inspects it before that
+			// discard happens.
+			r.addAt(name, "add a `values:` list with at least one member, e.g. `values: [draft, published]`",
+				"field `%s` has type `enum` but no `values`", name.Value)
+		} else {
+			f.EnumGoType = entityGoName + goName(name.Value)
+		}
 	}
 
 	f.Nullable = !required && !pk

@@ -16,11 +16,18 @@ func (r *resolver) buildPendingFilters(node ast.Node, entityName string) []pendi
 		return nil
 	}
 	out := make([]pendingFilter, 0, len(seq.Values))
+	seen := make(map[string]bool, len(seq.Values))
 	for _, v := range seq.Values {
 		s, ok := r.requireString(v, entityContext(entityName)+" `filters` entry")
 		if !ok {
 			continue
 		}
+		if seen[s.Value] {
+			r.addAt(atOf(s.Value, s.GetToken()), "each field may appear at most once in `filters`",
+				"duplicate filter %q in %s", s.Value, entityContext(entityName))
+			continue
+		}
+		seen[s.Value] = true
 		out = append(out, pendingFilter{name: atOf(s.Value, s.GetToken())})
 	}
 	return out

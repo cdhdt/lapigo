@@ -1,6 +1,8 @@
 package parse
 
 import (
+	"sort"
+
 	"github.com/goccy/go-yaml/ast"
 
 	"github.com/cdhdt/lapigo/internal/ir"
@@ -17,11 +19,22 @@ var endpointKeywords = map[string]ir.EndpointKind{
 
 // endpointKeywordNames is endpointKeywords' key set, for edit-distance
 // suggestions against an unrecognised entry.
+//
+// Built as a sorted slice, not left as a range over endpointKeywords: Go
+// randomises map iteration order per process, and suggest's tie-break
+// ("d == bestDist && k < best") only makes the final choice
+// order-independent if the vocabulary it walks is itself in a fixed order.
+// Ranging the map directly reproduced CLAUDE.md's determinism rule broken
+// exactly the way it warns about -- the same ambiguous input reporting a
+// different suggestion in different process runs, invisible to any
+// in-process test since the map is ranged once at package init and stays
+// however that one run ordered it.
 var endpointKeywordNames = func() []string {
 	out := make([]string, 0, len(endpointKeywords))
 	for k := range endpointKeywords {
 		out = append(out, k)
 	}
+	sort.Strings(out)
 	return out
 }()
 
@@ -50,7 +63,7 @@ var defaultEndpointKinds = []ir.EndpointKind{
 // examples use elsewhere (§6.2's "GET /items/{id}"): the collection path
 // (table name) for List/Create, and that path plus "/{id}" for
 // Get/Update/Delete.
-func (r *resolver) buildEndpoints(node ast.Node, table string) []ir.Endpoint {
+func (r *resolver) buildEndpoints(node ast.Node, entityName, table string) []ir.Endpoint {
 	if node == nil {
 		out := make([]ir.Endpoint, len(defaultEndpointKinds))
 		for i, k := range defaultEndpointKinds {
@@ -63,6 +76,7 @@ func (r *resolver) buildEndpoints(node ast.Node, table string) []ir.Endpoint {
 		return nil
 	}
 	out := make([]ir.Endpoint, 0, len(seq.Values))
+	seen := make(map[ir.EndpointKind]bool, len(seq.Values))
 	for _, v := range seq.Values {
 		s, ok := r.requireString(v, "`endpoints` entry")
 		if !ok {
@@ -77,6 +91,16 @@ func (r *resolver) buildEndpoints(node ast.Node, table string) []ir.Endpoint {
 			r.addAt(atOf(s.Value, s.GetToken()), hint, "unknown endpoint %q", s.Value)
 			continue
 		}
+		if seen[k] {
+			// Two identical ir.Endpoint entries register the same HTTP
+			// pattern twice, which panics at generated-server startup
+			// (http.ServeMux.Handle rejects a conflicting registration) --
+			// caught here, with a position, instead of downstream.
+			r.addAt(atOf(s.Value, s.GetToken()), "each endpoint kind may be declared at most once",
+				"duplicate endpoint %q in %s", s.Value, entityContext(entityName))
+			continue
+		}
+		seen[k] = true
 		out = append(out, ir.Endpoint{Kind: k, Path: endpointPath(k, table)})
 	}
 	return out

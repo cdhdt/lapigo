@@ -10,17 +10,36 @@ const suggestThreshold = 2
 // or the empty string if the closest entry is farther than suggestThreshold.
 // Used to turn an unknown schema key into a hint naming the likely intent
 // ("did you mean `type`?") rather than a bare rejection.
+//
+// bestDist tracks the true minimum distance across the whole of known,
+// unbounded by suggestThreshold -- only the final comparison applies the
+// threshold. An earlier version started bestDist at suggestThreshold+1 and
+// only ever lowered it, which meant every update already left bestDist
+// <= suggestThreshold: the final "bestDist > suggestThreshold" guard could
+// only ever be true when bestDist was untouched, a case already implied by
+// best == "". That guard was therefore dead code -- deleting it changed
+// nothing, which a mutation-testing pass caught. Tracking the unbounded
+// minimum here makes the guard load-bearing: bestDist can genuinely exceed
+// suggestThreshold when the nearest known entry is still far away.
+//
+// Ties are broken deterministically by the lexicographically smaller
+// candidate (d == bestDist && k < best), not by insertion order -- callers
+// must pass a vocabulary already in a stable order (sorted, not ranged from
+// a map) for this to be reproducible across processes; see
+// endpointKeywordNames and typeKeywordSuggestions.
 func suggest(got string, known []string) string {
 	best := ""
-	bestDist := suggestThreshold + 1
+	haveBest := false
+	bestDist := 0
 	for _, k := range known {
 		d := levenshtein(got, k)
-		if d < bestDist {
+		if !haveBest || d < bestDist || (d == bestDist && k < best) {
 			bestDist = d
 			best = k
+			haveBest = true
 		}
 	}
-	if bestDist > suggestThreshold {
+	if !haveBest || bestDist > suggestThreshold {
 		return ""
 	}
 	return best

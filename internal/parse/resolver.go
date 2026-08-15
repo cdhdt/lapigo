@@ -61,8 +61,14 @@ func nodeTypeName(n ast.Node) string {
 		return "a mapping"
 	case ast.SequenceType:
 		return "a sequence"
-	case ast.StringType, ast.LiteralType:
+	case ast.StringType:
 		return "a string"
+	case ast.LiteralType:
+		// A block scalar (`|` or `>`) decodes to a Go string too, but is not
+		// an *ast.StringNode -- requireString rejects it, so nodeTypeName
+		// must not call it "a string" too, or the diagnostic reads as
+		// self-contradictory: "must be a string, found a string".
+		return "a block scalar"
 	case ast.IntegerType:
 		return "an integer"
 	case ast.FloatType:
@@ -71,6 +77,28 @@ func nodeTypeName(n ast.Node) string {
 		return "a boolean"
 	case ast.NullType:
 		return "null"
+	case ast.AnchorType:
+		// Named plainly rather than falling into the "unexpected type"
+		// default: an anchor node (`&name value`) genuinely does wrap a
+		// mapping, sequence, or scalar, so "must be a mapping, found a
+		// value of an unexpected type" was actively wrong -- it is a
+		// mapping. lapigo does not resolve YAML anchors and aliases across
+		// a schema (there is no use for them in this format), so the
+		// honest answer is to name the construct and let the "must be a
+		// mapping" wrapper make clear it isn't accepted, rather than
+		// silently unwrapping it and pretending anchors are supported.
+		return "an anchor (not supported in a lapigo schema)"
+	case ast.AliasType:
+		return "an alias (not supported in a lapigo schema)"
+	case ast.MergeKeyType:
+		// A `<<:` merge key's own key node fails entries' string-key check
+		// and is reported through this same path -- named explicitly so
+		// that single diagnostic reads as "map key must be a string, found
+		// a merge key (not supported in a lapigo schema)" instead of
+		// cascading through the generic "unexpected type" fallback for the
+		// key, then separately for the merged-in value, then again for
+		// whatever consumed the result.
+		return "a merge key (not supported in a lapigo schema)"
 	default:
 		return "a value of an unexpected type"
 	}
@@ -107,9 +135,10 @@ func (r *resolver) requireSequence(n ast.Node, context string) (*ast.SequenceNod
 }
 
 // requireString asserts that n is a YAML string scalar, the shape every
-// identifier, enum member and keyword value in the schema format takes,
-// and returns its node and value together with ok=false on mismatch --
-// blaming n's own position rather than guessing at one.
+// identifier, enum member and keyword value in the schema format takes.
+// On a match it returns n's own *ast.StringNode with ok=true; on a
+// mismatch it records "must be a string, found <type>" at n's own
+// position -- rather than guessing at one -- and returns (nil, false).
 func (r *resolver) requireString(n ast.Node, context string) (*ast.StringNode, bool) {
 	if n == nil {
 		return nil, false

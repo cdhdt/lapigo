@@ -79,6 +79,72 @@ func TestAtOf_UsesExplicitValueButTokenSpan(t *testing.T) {
 	}
 }
 
+// TestSpanOf_MultiLineQuotedScalarEndReflectsActualLineWidth is the
+// regression test for defect 12: spanOf hardcoded end.Line to the token's
+// start line and counted every rune of the trimmed Origin including
+// embedded newlines, so a scalar written across two physical lines produced
+// an End far past the actual width of its start line. Given a token whose
+// written form spans two lines, End.Line must account for the line break,
+// and End.Column must not be inflated by counting the second line's runes
+// onto the first.
+func TestSpanOf_MultiLineQuotedScalarEndReflectsActualLineWidth(t *testing.T) {
+	// A double-quoted scalar folded across two source lines:
+	//   "line one
+	//   line two"
+	// Origin (as goccy records it, padding included) starts with the
+	// newline/indentation before the token, then the token's own text,
+	// itself containing one embedded newline.
+	tok := &token.Token{
+		Value:  "line one line two",
+		Origin: "\n  \"line one\nline two\"",
+		Position: &token.Position{
+			Line:   4,
+			Column: 3,
+		},
+	}
+
+	start, end := spanOf(tok)
+
+	if start != (source.Pos{Line: 4, Column: 3}) {
+		t.Fatalf("start = %+v, want {4 3}", start)
+	}
+	// The old implementation reported end == {Line: 4, Column: 21}: Column
+	// 3 (start) + 18 (every rune of `"line one\nline two"`, the embedded
+	// newline included as if it were a printable character) -- claiming a
+	// span 18 columns wide on a line the scalar's own first line of text
+	// ("line one) is only 9 columns into. The fixed behaviour advances
+	// End.Line by the one embedded newline, and measures End.Column from
+	// only the portion of raw actually written on the start line
+	// (`"line one`, 9 runes: quote, l,i,n,e,space,o,n,e).
+	want := source.Pos{Line: 5, Column: 12}
+	if end != want {
+		t.Fatalf("end = %+v, want %+v", end, want)
+	}
+}
+
+// TestSpanOf_NilTokenReturnsZeroSpan and
+// TestSpanOf_NilPositionReturnsZeroSpan are the regression tests for defect
+// 14: spanOf dereferenced tok.Position without a nil guard, while
+// errors.go's syntaxErrorDiagnostic already guards the same field before
+// calling it -- proof the field is known to be nullable. atOf and addNode
+// pass node.GetToken() straight through with no guard of their own.
+// CLAUDE.md forbids panics in library code; spanOf must degrade to the
+// zero span instead.
+func TestSpanOf_NilTokenReturnsZeroSpan(t *testing.T) {
+	start, end := spanOf(nil)
+	if start != (source.Pos{}) || end != (source.Pos{}) {
+		t.Fatalf("spanOf(nil) = (%+v, %+v), want zero spans", start, end)
+	}
+}
+
+func TestSpanOf_NilPositionReturnsZeroSpan(t *testing.T) {
+	tok := &token.Token{Value: "x", Origin: "x", Position: nil}
+	start, end := spanOf(tok)
+	if start != (source.Pos{}) || end != (source.Pos{}) {
+		t.Fatalf("spanOf(token with nil Position) = (%+v, %+v), want zero spans", start, end)
+	}
+}
+
 func TestSpanOf_PlainScalarTrimsSurroundingWhitespaceFromOrigin(t *testing.T) {
 	tok := &token.Token{
 		Value:  "plain",
