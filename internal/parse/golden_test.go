@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cdhdt/lapigo/internal/source"
@@ -50,6 +51,46 @@ var goldenCases = []string{
 	"duplicate_field_name",
 	"non_ascii_and_quoted_keys",
 	"multiple_errors_sorted_by_position",
+	"belongs_to_unknown_on_delete",
+	"belongs_to_field_options",
+}
+
+// successFixtures are the .yaml files under testdata/ that parse cleanly and
+// are asserted against the resulting IR elsewhere, so they carry no .diag.
+//
+// Every fixture must appear either here or in goldenCases; TestParse_NoOrphanFixtures
+// enforces it. A hardcoded list that a new fixture can silently fall outside of
+// is a fixture that never runs — which is exactly how belongs_to_unknown_on_delete
+// sat untested with its error path uncovered.
+var successFixtures = map[string]bool{
+	"canonical": true,
+}
+
+// TestParse_NoOrphanFixtures fails when a testdata/*.yaml file is classified
+// neither as a diagnostic fixture nor as a success fixture. Adding a fixture
+// and forgetting to register it should be a test failure, not silence.
+func TestParse_NoOrphanFixtures(t *testing.T) {
+	inGolden := make(map[string]bool, len(goldenCases))
+	for _, name := range goldenCases {
+		inGolden[name] = true
+	}
+
+	paths, err := filepath.Glob(filepath.Join("testdata", "*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no fixtures found under testdata/: the glob is wrong, not the corpus")
+	}
+
+	for _, p := range paths {
+		name := strings.TrimSuffix(filepath.Base(p), ".yaml")
+		if !inGolden[name] && !successFixtures[name] {
+			t.Errorf("fixture %s.yaml is in neither goldenCases nor successFixtures, so nothing runs it: "+
+				"add it to goldenCases (and create %s.diag with -update), or to successFixtures if it parses cleanly "+
+				"and is asserted against the IR elsewhere", name, name)
+		}
+	}
 }
 
 func TestParse_Golden(t *testing.T) {
