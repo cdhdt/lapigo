@@ -28,3 +28,6 @@ credentials.json
 
 # Local Claude Code settings (may contain machine-specific paths)
 .claude/settings.local.json
+
+# Agent worktrees — never part of the repository
+.claude/worktrees/

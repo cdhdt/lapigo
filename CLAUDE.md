@@ -107,15 +107,22 @@ tool unusable in a team.
 Validation errors cite a line, a column, and an actionable fix:
 
 ```
-lapigo.yaml:14:5: sort field "views" is not indexed
-   14 │     sort: [-views, -created_at]
-      │            ^^^^^^
-   add `index: true` to the `views` field, or remove it from the sort
+lapigo.yaml:12:12: sort key "created_at" is not unique
+   12 |     sort: [-created_at]
+      |            ^^^^^^^^^^^
+   the last sort key must be unique; add a second key such as `-id`,
+   or mark `created_at` unique
 ```
 
 A generator that emits a Go stack trace on malformed input loses its user on the
 first attempt. Position information is preserved from parsing onward for this
 reason.
+
+Columns are counted in **runes**, not bytes, everywhere. A caret computed from a
+byte offset lands in the wrong place on any line containing a multi-byte
+character, and an accented identifier is enough to trigger it. `internal/diag`
+owns this rendering and its output is a public contract — tests assert on the
+exact string.
 
 ### 7. Redis is optional
 
@@ -209,6 +216,50 @@ output must show a before/after sample of the generated code.
   explicitly, because that is where the subtle bugs live.
 
 Never claim a test passes without having run it and read the output.
+
+### Assert on exact values, never on substrings
+
+This rule is here because ignoring it already cost us. An adversarial review
+mutation-tested the first two packages: **16 of 36 deliberately introduced bugs
+survived the suite**. Deleting the tab-handling that a function existed for
+failed nothing. Replacing a caret-count clamp with `1 << 20` — a million carets
+on one line — failed nothing.
+
+The cause was uniform. Assertions like:
+
+```go
+if !strings.Contains(got, "lapigo.yaml:2:1:") { ... }   // passes on almost anything
+if reason == "" { ... }                                  // says nothing about the message
+if d.EndColumn != d.Pos.Column+1 { ... }                 // relational: passes if both are wrong
+```
+
+The handful of tests that pinned a full expected string caught nearly every
+mutant. So:
+
+- Compare the **whole** output to a literal, especially where the output is a
+  contract — diagnostics, generated code, SQL.
+- Never assert a value against another field of the same struct. That passes
+  when both are wrong together.
+- An `error` or reason string is part of the contract. Assert its exact text.
+- A `String()` on an out-of-range enum must return something obviously bogus
+  (`FieldType(99)`), never a plausible neighbour, and the test must say which.
+- Do not write tests that assert Go's own semantics. `f := &Field{}; x := S{F: f}`
+  then `x.F == f` tests the language, not lapigo — and it passes on the day the
+  real invariant breaks.
+
+**A test that cannot fail on the bug it exists to catch is worse than no test,
+because it is believed.**
+
+### Invariants live in code, not in comments
+
+Same review, same lesson from the other direction: the documentation asserted
+guarantees the types did not enforce. A doc comment saying a slice "is sorted by
+name" with nothing sorting it, or "at most one per entity" with nothing
+counting, is a wish.
+
+If an invariant matters, something must check it — a constructor that is the only
+way to build the value, or an explicit `Freeze()`/`Validate()` step with a test
+that violates the invariant and expects the failure.
 
 ---
 
