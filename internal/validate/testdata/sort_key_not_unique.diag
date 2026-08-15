@@ -1,0 +1,5 @@
+lapigo.yaml:12:12: sort key "created_at" is not unique
+   12 |     sort: [-created_at]
+      |            ^^^^^^^^^^^
+   the last sort key must be unique; add a second key such as `-id`,
+   or mark `created_at` unique

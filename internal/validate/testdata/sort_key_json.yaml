@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id:   { type: uuid, pk: true }
+      meta: { type: json, required: true, unique: true }
+    sort: [meta]
