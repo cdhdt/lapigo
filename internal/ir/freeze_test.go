@@ -180,10 +180,16 @@ func TestSchema_Freeze_PKIdentityNotName(t *testing.T) {
 }
 
 // TestSchema_Freeze_SortKeyNotOwnField proves the sort-key check is by
-// identity: foreign is never appended to e.Fields.
+// identity, not by name.
+//
+// The decoy deliberately shares the real field's name. An earlier version of
+// this test used a decoy named "created_at" against a field named "id", which
+// proved only that a foreign field is rejected — rewriting fieldBelongsTo to
+// compare names instead of pointers left it green. A same-name decoy is the
+// only shape that discriminates.
 func TestSchema_Freeze_SortKeyNotOwnField(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
-	foreign := &Field{Name: source.Bare("created_at"), Type: FieldTypeTimestamp}
+	foreign := &Field{Name: source.Bare("id"), Type: FieldTypeUUID}
 	e := &Entity{
 		Name:   "widget",
 		Fields: []*Field{id},
@@ -197,9 +203,12 @@ func TestSchema_Freeze_SortKeyNotOwnField(t *testing.T) {
 	}
 }
 
+// TestSchema_Freeze_FilterFieldNotOwnField proves the filter check is by
+// identity, not by name — hence the same-name decoy, for the reason spelled
+// out on TestSchema_Freeze_SortKeyNotOwnField.
 func TestSchema_Freeze_FilterFieldNotOwnField(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
-	foreign := &Field{Name: source.Bare("status"), Type: FieldTypeEnum}
+	foreign := &Field{Name: source.Bare("id"), Type: FieldTypeUUID}
 	e := &Entity{
 		Name:    "widget",
 		Fields:  []*Field{id},
@@ -213,9 +222,14 @@ func TestSchema_Freeze_FilterFieldNotOwnField(t *testing.T) {
 	}
 }
 
+// TestSchema_Freeze_RelationTargetNotInSchema proves the relation check is by
+// identity, not by name. The decoy shares the schema entity's name, which is
+// the case that actually matters: a Relation.Target retargeted by sorting
+// points at a real entity whose name may well match what the resolver
+// intended, and only pointer identity distinguishes it.
 func TestSchema_Freeze_RelationTargetNotInSchema(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
-	foreignEntity := &Entity{Name: "user"} // deliberately not in schema.Entities
+	foreignEntity := &Entity{Name: "widget"} // same name as e, deliberately not in schema.Entities
 	e := &Entity{
 		Name:      "widget",
 		Fields:    []*Field{id},
