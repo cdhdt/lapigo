@@ -92,8 +92,10 @@ type Schema struct {
 
 type Entity struct {
     Name      string             // as written
+    NameSpan  source.Span        // where the name was written
     GoName    string             // validated Go identifier
     Table     string
+    TableSpan source.Span        // zero when `table:` was defaulted
     Fields    []*Field           // declaration order
     PK        *Field
     Sort      SortSpec
@@ -130,18 +132,21 @@ type SortSpec struct {
 
 type SortKey struct {
     Field *Field                 // RESOLVED pointer, not a name
-    Pos   Pos
+    Span  source.Span            // the entry in `sort:`, sign included
 }
 
 type Filter struct {
     Field *Field                 // resolved
     Op    FilterOp               // Eq only in phase 1
+    Span  source.Span            // the entry in `filters:`
 }
 
 type Relation struct {
     Name       string            // "author"
+    NameSpan   source.Span
     GoName     string            // "Author"
     Target     *Entity           // resolved
+    TargetSpan source.Span       // the `target:` value, for a bad reference
     Column     string            // "author_id"
     GoType     string            // from the target's PK
     Nullable   bool
@@ -173,6 +178,16 @@ an element of that entity's own `Fields`, every `SortKey.Field` and
 `Filter.Field` belongs to its entity, every `Relation.Target` is an element of
 `Schema.Entities` — and there is a test that resolves, then appends and sorts,
 and checks identity survives. A documented "do not append" rule is not a fix.
+
+**Every IR node a diagnostic can blame carries its own span.** An earlier
+revision gave `SortKey` a start position with no end, and gave `Entity`,
+`Filter` and `Relation` nothing at all. The consequence showed up as soon as the
+validator was written: a diagnostic about a filter pointed at the *filtered
+field's declaration* instead of the offending `filters:` entry, sending the
+reader to the wrong line — the precise failure the whole positions effort exists
+to prevent. Reconstructing a span downstream is guesswork, because only the
+parser saw the written form, and a quoted or sign-prefixed token is wider than
+the value it carries.
 
 **`GoType` and `PgType` are computed methods, never stored fields.** Revision 1
 stored them as strings *alongside* the `FieldType` they derive from, which made
