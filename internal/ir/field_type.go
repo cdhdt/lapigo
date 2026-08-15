@@ -101,12 +101,19 @@ func (t FieldType) PgType() string {
 // request" and "explicitly null" stay distinguishable at every layer that
 // touches the value — see spec §6.5 and §6.6.
 //
-// For FieldTypeEnum, GoType reports only the underlying representation
-// ("string"): the actual generated type name (e.g. "ArticleStatus") is
-// specific to one field of one entity, which FieldType — a bare enum with no
-// such context — cannot produce. That resolved name lives on Field.GoType
-// instead, computed by whatever builds the IR.
+// FieldTypeEnum is not handled here. Revision 1 had this method return
+// "string" for an enum's base type, which made GoType(true) answer
+// "*string" for a nullable enum while the Field that owns it needs
+// "*ArticleStatus" — a bare FieldType has no entity or field context to
+// produce that name from, so "string" was a plausible-looking wrong answer,
+// not a simplification. Rather than guess, GoType refuses to answer for
+// FieldTypeEnum and returns an explicitly unusable placeholder instead;
+// Field.GoType is what actually resolves an enum's Go type, using the
+// field's EnumGoType.
 func (t FieldType) GoType(nullable bool) string {
+	if t == FieldTypeEnum {
+		return "<invalid: FieldType.GoType cannot answer for an enum, use Field.GoType>"
+	}
 	base := t.goTypeBase()
 	if nullable {
 		return "*" + base
@@ -138,9 +145,10 @@ func (t FieldType) goTypeBase() string {
 		return "time.Time"
 	case FieldTypeJSON:
 		return "json.RawMessage"
-	case FieldTypeEnum:
-		return "string"
 	default:
+		// FieldTypeEnum never reaches here: GoType intercepts it above and
+		// returns before calling this helper. Any other out-of-range value
+		// falls through to this same placeholder.
 		return fmt.Sprintf("<unknown FieldType %d>", int(t))
 	}
 }

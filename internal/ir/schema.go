@@ -5,21 +5,34 @@ package ir
 // filter resolved to its target Field. Templates consume a *Schema and
 // nothing else — never YAML, never a parser AST (spec §2.2).
 type Schema struct {
-	// Entities is sorted by name. Anything the IR exposes for a template to
-	// range over is a slice in this kind of defined order, never a map:
-	// ranging a Go map is nondeterministic, and spec §5.3 requires
-	// byte-identical output for the same input on every run.
-	Entities []Entity
+	// Entities is sorted by name once resolved. Freeze checks the ordering;
+	// nothing before that point in the pipeline enforces it, so a Schema
+	// under construction may be temporarily unsorted.
+	//
+	// The slice holds *Entity, not Entity, and this is not a style choice
+	// (spec §2.2). A *Entity taken into a []Entity is invalidated by any
+	// later append, and — far worse — sorting a []Entity silently retargets
+	// it: a Relation.Target resolved before the sort would end up pointing
+	// at whatever entity the sort moved into that slot, with no crash and no
+	// nil. Pointer slices make identity survive both reallocation and
+	// reordering; Freeze's append-and-sort test is what actually proves it.
+	Entities []*Entity
 }
 
-// Lookup returns the entity named name, or nil if the schema has none.
-// Entities is small (one lapigo.yaml describes a handful of entities), so a
-// linear scan over the sorted slice is simpler than maintaining a parallel
-// map that could drift out of sync with it.
+// Lookup returns the entity named name, or nil if the schema has none, or if
+// s itself is nil. Entities is small (one lapigo.yaml describes a handful of
+// entities), so a linear scan over the sorted slice is simpler than
+// maintaining a parallel map that could drift out of sync with it.
+//
+// Lookup returns the schema's own *Entity, the same pointer identity every
+// resolved Relation.Target holds, never a copy.
 func (s *Schema) Lookup(name string) *Entity {
-	for i := range s.Entities {
-		if s.Entities[i].Name == name {
-			return &s.Entities[i]
+	if s == nil {
+		return nil
+	}
+	for _, e := range s.Entities {
+		if e.Name == name {
+			return e
 		}
 	}
 	return nil
@@ -36,7 +49,7 @@ type Entity struct {
 	Name      string // as written in lapigo.yaml
 	GoName    string // validated Go identifier
 	Table     string
-	Fields    []Field // declaration order, not sorted — see Lookup
+	Fields    []*Field // declaration order, not sorted — see Lookup. Pointer slice for the same reason as Schema.Entities.
 	PK        *Field
 	Sort      SortSpec
 	Filters   []Filter
@@ -45,13 +58,13 @@ type Entity struct {
 }
 
 // Lookup returns the field named name, or nil if the entity has none. It
-// searches Fields in declaration order and returns a pointer into that
-// slice, the same pointer identity that SortKey.Field, Filter.Field and
-// Entity.PK hold for the field once the IR is fully resolved.
+// searches Fields in declaration order and returns the same *Field pointer
+// that SortKey.Field, Filter.Field and Entity.PK hold for the field once the
+// IR is fully resolved.
 func (e *Entity) Lookup(name string) *Field {
-	for i := range e.Fields {
-		if e.Fields[i].Name.Value == name {
-			return &e.Fields[i]
+	for _, f := range e.Fields {
+		if f.Name.Value == name {
+			return f
 		}
 	}
 	return nil

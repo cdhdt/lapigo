@@ -1,10 +1,6 @@
 package ir
 
-import (
-	"testing"
-
-	"github.com/cdhdt/lapigo/internal/source"
-)
+import "testing"
 
 func TestSortSpec_Direction(t *testing.T) {
 	tests := []struct {
@@ -25,17 +21,9 @@ func TestSortSpec_Direction(t *testing.T) {
 	}
 }
 
-// TestSortKey_HoldsResolvedField documents that SortKey.Field is a resolved
-// *Field pointer, not a name — the single most important IR failure mode per
-// spec §2.2.
-func TestSortKey_HoldsResolvedField(t *testing.T) {
-	f := &Field{Name: source.Bare("id"), Column: "id", Type: FieldTypeUUID, PK: true}
-	key := SortKey{Field: f}
-
-	if key.Field != f {
-		t.Errorf("SortKey.Field = %p, want %p (same pointer as the resolved field)", key.Field, f)
-	}
-	if key.Field.Column != "id" {
-		t.Errorf("SortKey.Field.Column = %q, want %q", key.Field.Column, "id")
-	}
-}
+// TestSortKey_HoldsResolvedField (a Go-language-guarantee tautology: build
+// f, assign it to SortKey.Field, assert they are equal) has been removed.
+// It would pass unchanged the moment defect 1 corrupted every relation by
+// retargeting after a sort — see TestSchema_Freeze_SurvivesAppendAndSort in
+// freeze_test.go, which actually exercises the append-then-sort sequence
+// that breaks identity under a value slice.

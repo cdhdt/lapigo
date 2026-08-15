@@ -33,9 +33,10 @@ func TestFieldType_PgType(t *testing.T) {
 	}
 }
 
-// TestFieldType_GoType covers every row of spec §3.2, both nullable and not.
-// Nullable fields use the pointer form so that "absent" and "null" are
-// distinguishable.
+// TestFieldType_GoType covers every row of spec §3.2 except enum, which
+// FieldType deliberately refuses to answer for — see
+// TestFieldType_GoType_Enum below and Field.GoType in field_test.go, which is
+// what actually resolves an enum's Go type.
 func TestFieldType_GoType(t *testing.T) {
 	tests := []struct {
 		yaml         string
@@ -54,7 +55,6 @@ func TestFieldType_GoType(t *testing.T) {
 		{"timestamp", FieldTypeTimestamp, "time.Time", "*time.Time"},
 		{"date", FieldTypeDate, "time.Time", "*time.Time"},
 		{"json", FieldTypeJSON, "json.RawMessage", "*json.RawMessage"},
-		{"enum", FieldTypeEnum, "string", "*string"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.yaml+"/non-nullable", func(t *testing.T) {
@@ -67,6 +67,44 @@ func TestFieldType_GoType(t *testing.T) {
 				t.Errorf("GoType(true) = %q, want %q", got, tt.wantNullable)
 			}
 		})
+	}
+}
+
+// TestFieldType_PgType_Unknown covers PgType's own out-of-range branch,
+// distinct from String's: a bad PgType must not silently emit a real-looking
+// column type either.
+func TestFieldType_PgType_Unknown(t *testing.T) {
+	typ := FieldType(99)
+	const want = "<unknown FieldType 99>"
+	if got := typ.PgType(); got != want {
+		t.Errorf("PgType() = %q, want %q", got, want)
+	}
+}
+
+// TestFieldType_GoType_UnknownNonEnum covers goTypeBase's own out-of-range
+// branch for a FieldType that is neither a known scalar nor FieldTypeEnum
+// (which GoType intercepts before ever reaching goTypeBase).
+func TestFieldType_GoType_UnknownNonEnum(t *testing.T) {
+	typ := FieldType(99)
+	const want = "<unknown FieldType 99>"
+	if got := typ.GoType(false); got != want {
+		t.Errorf("GoType(false) = %q, want %q", got, want)
+	}
+}
+
+// TestFieldType_GoType_Enum pins the fix for the contradiction spec §2.2
+// calls out: FieldType.GoType(true) used to return "*string" for an enum,
+// while the Field that owns it needs "*ArticleStatus" — a bare FieldType has
+// no entity context to produce that name from. Rather than return a
+// plausible-looking wrong answer, FieldType.GoType now returns an explicitly
+// unusable placeholder for FieldTypeEnum in both directions.
+func TestFieldType_GoType_Enum(t *testing.T) {
+	const want = "<invalid: FieldType.GoType cannot answer for an enum, use Field.GoType>"
+	if got := FieldTypeEnum.GoType(false); got != want {
+		t.Errorf("GoType(false) = %q, want %q", got, want)
+	}
+	if got := FieldTypeEnum.GoType(true); got != want {
+		t.Errorf("GoType(true) = %q, want %q", got, want)
 	}
 }
 
@@ -99,10 +137,14 @@ func TestFieldType_String(t *testing.T) {
 	}
 }
 
+// TestFieldType_String_Unknown asserts the exact placeholder, not merely
+// that it is non-empty. "string" is itself non-empty, so a got == ""
+// assertion would not have caught FieldType.String() wrongly reporting an
+// out-of-range value as a legitimate type keyword.
 func TestFieldType_String_Unknown(t *testing.T) {
-	var typ FieldType = 999
-	got := typ.String()
-	if got == "" {
-		t.Error("String() on an unknown FieldType returned empty string, want a diagnostic placeholder")
+	typ := FieldType(99)
+	const want = "FieldType(99)"
+	if got := typ.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
 }
