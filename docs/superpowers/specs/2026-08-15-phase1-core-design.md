@@ -285,7 +285,7 @@ Phase 1 supports equality only.
 ### 4.1 Target output
 
 ```
-lapigo.yaml:12:11: sort key "created_at" is not unique
+lapigo.yaml:12:12: sort key "created_at" is not unique
    12 |     sort: [-created_at]
       |            ^^^^^^^^^^^
    the last sort key must be unique; add a second key such as `-id`,
@@ -293,6 +293,12 @@ lapigo.yaml:12:11: sort key "created_at" is not unique
 ```
 
 Every error carries file, line, column, a caret span and an actionable hint.
+
+The column is 12, not 11: with a four-space indent, the `-` of `-created_at`
+sits at rune column 12. Revision 1 of this document printed 11 in the header
+while its own caret row pointed at 12 — the implementation follows the
+arithmetic, and `internal/diag`'s golden test is now the authority on this
+format.
 
 ### 4.2 Tabs are rejected outright
 

@@ -107,15 +107,22 @@ tool unusable in a team.
 Validation errors cite a line, a column, and an actionable fix:
 
 ```
-lapigo.yaml:14:5: sort field "views" is not indexed
-   14 │     sort: [-views, -created_at]
-      │            ^^^^^^
-   add `index: true` to the `views` field, or remove it from the sort
+lapigo.yaml:12:12: sort key "created_at" is not unique
+   12 |     sort: [-created_at]
+      |            ^^^^^^^^^^^
+   the last sort key must be unique; add a second key such as `-id`,
+   or mark `created_at` unique
 ```
 
 A generator that emits a Go stack trace on malformed input loses its user on the
 first attempt. Position information is preserved from parsing onward for this
 reason.
+
+Columns are counted in **runes**, not bytes, everywhere. A caret computed from a
+byte offset lands in the wrong place on any line containing a multi-byte
+character, and an accented identifier is enough to trigger it. `internal/diag`
+owns this rendering and its output is a public contract — tests assert on the
+exact string.
 
 ### 7. Redis is optional
 
