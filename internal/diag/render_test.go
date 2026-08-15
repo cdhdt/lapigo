@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/cdhdt/lapigo/internal/diag"
-	"github.com/cdhdt/lapigo/internal/ir"
+	"github.com/cdhdt/lapigo/internal/source"
 )
 
 // TestRender_SpecExample reproduces the worked example from
@@ -19,10 +19,10 @@ import (
 // source line ("    sort: [-created_at]", 4-space indent, verified
 // character-for-character below) and its own caret row place the caret
 // under the '-' of "-created_at", which is rune column 12, not 11 — the
-// spec's header and its own diagram disagree by one. ir.Pos's contract
+// spec's header and its own diagram disagree by one. source.Pos's contract
 // (1-based, exact) leaves no room for an intentional off-by-one, and baking
 // one into Render would misplace every caret produced from a real,
-// correctly computed ir.Pos elsewhere in the codebase. This test therefore
+// correctly computed source.Pos elsewhere in the codebase. This test therefore
 // asserts column 12, matching the diagram's actual caret position, and
 // keeps everything else — gutter layout, caret width, hint indentation —
 // byte-for-byte as specified.
@@ -31,7 +31,7 @@ func TestRender_SpecExample(t *testing.T) {
 	ds := diag.Diagnostics{
 		{
 			File:      "lapigo.yaml",
-			Pos:       ir.Pos{Line: 12, Column: 12},
+			Pos:       source.Pos{Line: 12, Column: 12},
 			EndColumn: 23, // "-created_at" is 11 runes: 12..22 inclusive
 			Message:   `sort key "created_at" is not unique`,
 			Hint: "the last sort key must be unique; add a second key such as `-id`,\n" +
@@ -56,9 +56,9 @@ func TestRender_MultipleDiagnosticsSortedAndSeparated(t *testing.T) {
 	// Appended out of position order on purpose: Render must sort, not rely
 	// on accumulation order.
 	ds := diag.Diagnostics{
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 3, Column: 1}, EndColumn: 2, Message: "third"},
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 1}, EndColumn: 2, Message: "first"},
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 2, Column: 6}, EndColumn: 9, Message: "second"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 3, Column: 1}, EndColumn: 2, Message: "third"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 1}, EndColumn: 2, Message: "first"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 2, Column: 6}, EndColumn: 9, Message: "second"},
 	}
 
 	got := ds.Render(src)
@@ -93,7 +93,7 @@ func TestRender_NonASCIIRuneColumn(t *testing.T) {
 
 	// "bad" starts at rune column 7 (c=1,a=2,f=3,é=4,:=5,' '=6,b=7).
 	ds := diag.Diagnostics{
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 7}, EndColumn: 10, Message: "bad identifier"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 7}, EndColumn: 10, Message: "bad identifier"},
 	}
 
 	got := ds.Render(src)
@@ -115,7 +115,7 @@ func TestRender_WarningSeverityPrefix(t *testing.T) {
 		{
 			Severity: diag.Warning,
 			File:     "lapigo.yaml",
-			Pos:      ir.Pos{Line: 1, Column: 9},
+			Pos:      source.Pos{Line: 1, Column: 9},
 			Message:  "sort key \"updated_at\" is mutable",
 		},
 	}
@@ -128,7 +128,7 @@ func TestRender_WarningSeverityPrefix(t *testing.T) {
 func TestRender_ErrorSeverityHasNoPrefix(t *testing.T) {
 	src := []byte("sort: [-updated_at]\n")
 	ds := diag.Diagnostics{
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 9}, Message: "boom"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 9}, Message: "boom"},
 	}
 	got := ds.Render(src)
 	if !strings.HasPrefix(got, "lapigo.yaml:1:9: boom") {
@@ -139,7 +139,7 @@ func TestRender_ErrorSeverityHasNoPrefix(t *testing.T) {
 func TestRender_NoHintOmitsHintLines(t *testing.T) {
 	src := []byte("sort: [-id]\n")
 	ds := diag.Diagnostics{
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 8}, EndColumn: 11, Message: "boom"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 8}, EndColumn: 11, Message: "boom"},
 	}
 	got := ds.Render(src)
 	lines := strings.Split(got, "\n")

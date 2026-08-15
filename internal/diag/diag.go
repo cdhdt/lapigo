@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cdhdt/lapigo/internal/ir"
+	"github.com/cdhdt/lapigo/internal/source"
 )
 
 // Severity classifies whether a Diagnostic must stop generation or is
@@ -64,13 +64,13 @@ type Diagnostic struct {
 	File string
 
 	// Pos is the start of the offending span. Pos.Column is 1-based and
-	// counted in runes (see ir.Pos) — never bytes, so a caret computed from
+	// counted in runes (see source.Pos) — never bytes, so a caret computed from
 	// it lands correctly even on a line with a multi-byte identifier.
 	//
-	// The zero Pos (ir.Pos{}) means "no position": a diagnostic that blames
+	// The zero Pos (source.Pos{}) means "no position": a diagnostic that blames
 	// something synthesised rather than written by a human. Render degrades
 	// to a header with no line:col rather than printing a misleading ":0:0:".
-	Pos ir.Pos
+	Pos source.Pos
 
 	// EndColumn is the 1-based rune column one past the last rune of the
 	// span (exclusive), so span width is EndColumn - Pos.Column. A single

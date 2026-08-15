@@ -1,6 +1,6 @@
 package diag
 
-import "github.com/cdhdt/lapigo/internal/ir"
+import "github.com/cdhdt/lapigo/internal/source"
 
 // CheckNoTabs scans src for tab characters and returns one Diagnostic per
 // occurrence, before any YAML parsing happens.
@@ -14,7 +14,7 @@ import "github.com/cdhdt/lapigo/internal/ir"
 // the bug class entirely and means Render never needs a
 // rune-index-to-display-column map to compensate for tab expansion.
 //
-// Positions are counted in runes, matching ir.Pos: a tab following a
+// Positions are counted in runes, matching source.Pos: a tab following a
 // multi-byte identifier is reported at its rune column, not its byte
 // offset.
 func CheckNoTabs(filename string, src []byte) Diagnostics {
@@ -30,7 +30,7 @@ func CheckNoTabs(filename string, src []byte) Diagnostics {
 			ds.Add(Diagnostic{
 				Severity:  Error,
 				File:      filename,
-				Pos:       ir.Pos{Line: line, Column: col},
+				Pos:       source.Pos{Line: line, Column: col},
 				EndColumn: col + 1,
 				Message:   "tab character is not allowed in schema files",
 				Hint: "use spaces instead of tabs; YAML forbids tabs for indentation, and " +

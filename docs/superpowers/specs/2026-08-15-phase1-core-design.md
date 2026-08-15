@@ -87,14 +87,14 @@ no parser.
 
 ```go
 type Schema struct {
-    Entities []Entity            // sorted by name
+    Entities []*Entity           // sorted by name
 }
 
 type Entity struct {
     Name      string             // as written
     GoName    string             // validated Go identifier
     Table     string
-    Fields    []Field            // declaration order
+    Fields    []*Field           // declaration order
     PK        *Field
     Sort      SortSpec
     Filters   []Filter
@@ -103,12 +103,10 @@ type Entity struct {
 }
 
 type Field struct {
-    Name       At[string]
+    Name       source.At[string]
     GoName     string
     Column     string
     Type       FieldType         // resolved, not a string
-    GoType     string            // "string", "pgtype.Numeric", ...
-    PgType     string            // "text", "numeric", ...
     Nullable   bool
     Unique     bool
     PK         bool
@@ -116,9 +114,14 @@ type Field struct {
     Immutable  bool              // accepted on create, rejected on update
     Version    bool              // optimistic concurrency column
     Max        *int              // string length constraint
-    EnumValues []At[string]
+    EnumGoType string            // set only for FieldTypeEnum, e.g. "ArticleStatus"
+    EnumValues []source.At[string]
     Default    *DefaultValue
 }
+
+// Derived, never stored. See below.
+func (f *Field) GoType() string
+func (f *Field) PgType() string
 
 type SortSpec struct {
     Keys []SortKey               // last key resolves to a unique field
@@ -155,6 +158,30 @@ type Endpoint struct {
 rendering a comparison needs the field's Go type, column and nullability; a
 name would force a lookup inside the template, which §5.1 forbids. An IR that
 still requires resolution is not resolved.
+
+**The collections are `[]*Entity` and `[]*Field`, not slices of values**, and
+this is not a style preference. A `*Field` taken into a `[]Field` is invalidated
+by any later `append`, and — far worse — **sorting the slice silently retargets
+it**. This spec mandates that `Schema.Entities` be sorted by name, so a
+`Relation.Target` resolved before that sort would end up pointing at a different
+entity: no crash, no nil, no race detector hit, just a foreign key emitted to the
+wrong table. Pointer slices make identity survive both reallocation and
+reordering.
+
+`Schema.Freeze()` asserts the invariant after resolution — every `Entity.PK` is
+an element of that entity's own `Fields`, every `SortKey.Field` and
+`Filter.Field` belongs to its entity, every `Relation.Target` is an element of
+`Schema.Entities` — and there is a test that resolves, then appends and sorts,
+and checks identity survives. A documented "do not append" rule is not a fix.
+
+**`GoType` and `PgType` are computed methods, never stored fields.** Revision 1
+stored them as strings *alongside* the `FieldType` they derive from, which made
+`Field{Type: FieldTypeInt, GoType: "string", PgType: "double precision"}`
+constructible with nothing objecting — a Go `string` bound to a
+`double precision` column. The only genuine inputs to the resolved type are
+`Type`, `Nullable`, `Max` (for `varchar(n)`) and `EnumGoType` (which needs the
+entity name, hence cannot live on `FieldType`). Storing those and deriving the
+rest makes divergence unrepresentable rather than merely discouraged.
 
 **Imports are a property of a file, not an entity.** Step 6 produces a
 `[]OutputFile{Path, Package, Imports, Data}`; each output file carries its own
@@ -315,10 +342,23 @@ disappears, and the renderer never needs a rune-index-to-display-column map.
 Captured during the AST walk that builds the IR — the walk visits every node
 anyway, so recording a position costs nothing.
 
+`Pos` and `At[T]` live in **`internal/source`**, a leaf package importing nothing
+but the standard library. Both the IR and the diagnostic renderer need to name a
+position, and neither should import the other to do it — an earlier layout put
+`Pos` in `ir`, which meant `diag` depended on the IR and the IR could never
+report a diagnostic without a cycle.
+
 ```go
+package source
+
 type Pos struct{ Line, Column int } // 1-based, columns counted in RUNES
-type At[T any] struct { Value T; Pos Pos }
+type At[T any] struct { Value T; Pos Pos; End Pos }
 ```
+
+`At` carries an **end position, not just a start**. Recomputing the span as
+`Pos.Column + utf8.RuneCountInString(Value)` at each call site is wrong for any
+quoted scalar: `"created_at"` occupies twelve columns on the line while its value
+is ten runes, so every caret over a quoted key would be short by the quotes.
 
 `At[T]` is applied selectively, to the leaves validation actually blames:
 identifiers, enum members, sort keys. A `Pos` on every node would force a
@@ -345,6 +385,40 @@ the first error. This is the `go/scanner.ErrorList` shape.
 Column arithmetic is in runes throughout, converted only at render time. An
 accented identifier is enough to misplace a caret computed in bytes, and there
 is an explicit test for it.
+
+### 4.5 What the renderer must guarantee
+
+**Rendering is multi-file.** `Render(srcs ...source.File)` looks each diagnostic
+up by its `File`, and omits the snippet when that file is absent. A renderer
+taking a single source renders every diagnostic against it regardless of which
+file the diagnostic names — printing a line from `a.yaml` beneath a header that
+says `b.yaml`. Confidently wrong output is worse than none.
+
+**Control bytes from the schema never reach the terminal.** A schema file is
+untrusted input: fetched from a template, pasted from an issue, checked into
+someone else's repository. Echoing its bytes into a rendered snippet means
+`\x1b]0;…\x07` rewrites the user's window title and `\x08` overwrites the
+diagnostic lapigo just printed. Every rune for which `unicode.IsControl` holds,
+plus the zero-width and line-separator ranges, is replaced by one visible
+placeholder rune — one for one, so column arithmetic is unchanged.
+
+**Ordering is total.** `File`, then `Line`, `Column`, `EndColumn`, `Severity`,
+`Message`. Ordering on line and column alone leaves two diagnostics at the same
+position in accumulation order, which is whatever the validator's traversal
+produced — and §5.3 requires byte-identical output for identical input. A
+diagnostic report is output.
+
+**`Err()` is nil unless there is an error.** §3.3 rule 5 defines a warning that
+must not stop generation, so the idiomatic `if err := diags.Err(); err != nil`
+must not abort on warnings alone. A separate accessor exists for the caller that
+wants `-Werror` behaviour.
+
+**Alignment is exact for width-1 characters, and the documentation says so.**
+Rune columns are the right choice — byte columns are worse — but a rune column
+is not a display column: `名前` is two runes and four cells, and a combining mark
+is a rune with no cell at all. The doc comments state the limitation rather than
+claiming carets always land correctly, and a test records the known skew. Display
+width is a 1.5 concern.
 
 ---
 

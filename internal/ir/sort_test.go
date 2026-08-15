@@ -1,6 +1,10 @@
 package ir
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cdhdt/lapigo/internal/source"
+)
 
 func TestSortSpec_Direction(t *testing.T) {
 	tests := []struct {
@@ -25,7 +29,7 @@ func TestSortSpec_Direction(t *testing.T) {
 // *Field pointer, not a name — the single most important IR failure mode per
 // spec §2.2.
 func TestSortKey_HoldsResolvedField(t *testing.T) {
-	f := &Field{Name: Bare("id"), Column: "id", Type: FieldTypeUUID, PK: true}
+	f := &Field{Name: source.Bare("id"), Column: "id", Type: FieldTypeUUID, PK: true}
 	key := SortKey{Field: f}
 
 	if key.Field != f {

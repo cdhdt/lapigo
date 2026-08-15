@@ -1,5 +1,7 @@
 package ir
 
+import "github.com/cdhdt/lapigo/internal/source"
+
 // SortSpec is an entity's single declared sort (spec §3, §7.1). Phase 1
 // allows exactly one sort per entity and one direction for the whole spec:
 // a row-value comparison — the only form verified to hold an index seek — is
@@ -26,5 +28,5 @@ func (s SortSpec) Direction() string {
 // lookup inside the template, which spec §5.1 forbids.
 type SortKey struct {
 	Field *Field
-	Pos   Pos
+	Pos   source.Pos
 }

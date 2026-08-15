@@ -1,6 +1,10 @@
 package ir
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cdhdt/lapigo/internal/source"
+)
 
 func TestFilterOp_String(t *testing.T) {
 	if got, want := FilterOpEq.String(), "eq"; got != want {
@@ -19,7 +23,7 @@ func TestFilterOp_String_Unknown(t *testing.T) {
 // pointer, not a name: a template rendering a filter comparison needs the
 // field's Go type, column and nullability without a lookup.
 func TestFilter_HoldsResolvedField(t *testing.T) {
-	f := &Field{Name: Bare("status"), Column: "status", Type: FieldTypeEnum}
+	f := &Field{Name: source.Bare("status"), Column: "status", Type: FieldTypeEnum}
 	filter := Filter{Field: f, Op: FilterOpEq}
 
 	if filter.Field != f {

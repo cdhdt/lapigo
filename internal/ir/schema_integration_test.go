@@ -1,6 +1,10 @@
 package ir
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cdhdt/lapigo/internal/source"
+)
 
 // TestSchema_Compose builds the spec §3 `article` example by hand — the same
 // shape a resolver would produce — to prove the IR types actually compose:
@@ -14,7 +18,7 @@ func TestSchema_Compose(t *testing.T) {
 		GoName: "User",
 		Table:  "users",
 		Fields: []Field{
-			{Name: Bare("id"), GoName: "ID", Column: "id", Type: FieldTypeUUID, GoType: "pgtype.UUID", PgType: "uuid", PK: true},
+			{Name: source.Bare("id"), GoName: "ID", Column: "id", Type: FieldTypeUUID, GoType: "pgtype.UUID", PgType: "uuid", PK: true},
 		},
 	}
 	user.PK = &user.Fields[0]
@@ -24,10 +28,10 @@ func TestSchema_Compose(t *testing.T) {
 		GoName: "Article",
 		Table:  "articles",
 		Fields: []Field{
-			{Name: Bare("id"), GoName: "ID", Column: "id", Type: FieldTypeUUID, GoType: "pgtype.UUID", PgType: "uuid", PK: true},
-			{Name: Bare("status"), GoName: "Status", Column: "status", Type: FieldTypeEnum, GoType: "ArticleStatus", PgType: "text",
-				EnumValues: []At[string]{Bare("draft"), Bare("published")}},
-			{Name: Bare("created_at"), GoName: "CreatedAt", Column: "created_at", Type: FieldTypeTimestamp, GoType: "time.Time", PgType: "timestamptz", Immutable: true},
+			{Name: source.Bare("id"), GoName: "ID", Column: "id", Type: FieldTypeUUID, GoType: "pgtype.UUID", PgType: "uuid", PK: true},
+			{Name: source.Bare("status"), GoName: "Status", Column: "status", Type: FieldTypeEnum, GoType: "ArticleStatus", PgType: "text",
+				EnumValues: []source.At[string]{source.Bare("draft"), source.Bare("published")}},
+			{Name: source.Bare("created_at"), GoName: "CreatedAt", Column: "created_at", Type: FieldTypeTimestamp, GoType: "time.Time", PgType: "timestamptz", Immutable: true},
 		},
 	}
 	article.PK = &article.Fields[0]

@@ -1,14 +1,17 @@
-// Package ir holds the intermediate representation: the validated, resolved
-// form of a lapigo schema that templates render from.
+// Package source holds the vocabulary for talking about schema source files:
+// positions, values paired with the place they were written, and the files
+// themselves.
 //
-// The IR is the boundary between input and output. Templates consume it and
-// nothing else — never YAML, never a parser AST. A new input format produces
-// the same IR and touches no template; a new output target consumes the same IR
-// and touches no parser.
+// It is deliberately a leaf: it imports nothing outside the standard library
+// and depends on no other lapigo package. Both the intermediate representation
+// and the diagnostic renderer need to name a position, and neither should have
+// to import the other to do it. An earlier layout put Pos in the ir package,
+// which meant the diagnostic layer depended on the IR and the IR could never
+// report a diagnostic without an import cycle.
 //
-// This package must not import a YAML parser. Positions are carried as plain
-// line and column numbers so the IR stays independent of how a schema was read.
-package ir
+// Nothing here knows how a schema was read. Positions are plain line and
+// column numbers, so swapping the YAML parser touches no consumer.
+package source
 
 // Pos is a location in a schema source file. Both fields are 1-based, and
 // Column is counted in RUNES, not bytes.

@@ -3,11 +3,13 @@ package ir
 import (
 	"reflect"
 	"testing"
+
+	"github.com/cdhdt/lapigo/internal/source"
 )
 
 func TestEntity_Lookup_Found(t *testing.T) {
-	id := Field{Name: Bare("id"), PK: true}
-	title := Field{Name: Bare("title")}
+	id := Field{Name: source.Bare("id"), PK: true}
+	title := Field{Name: source.Bare("title")}
 	e := &Entity{Name: "article", Fields: []Field{id, title}}
 
 	got := e.Lookup("title")
@@ -24,7 +26,7 @@ func TestEntity_Lookup_Found(t *testing.T) {
 }
 
 func TestEntity_Lookup_NotFound(t *testing.T) {
-	e := &Entity{Name: "article", Fields: []Field{{Name: Bare("id")}}}
+	e := &Entity{Name: "article", Fields: []Field{{Name: source.Bare("id")}}}
 
 	if got := e.Lookup("nonexistent"); got != nil {
 		t.Errorf("Lookup(\"nonexistent\") = %+v, want nil", got)

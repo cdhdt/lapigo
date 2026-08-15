@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/cdhdt/lapigo/internal/diag"
-	"github.com/cdhdt/lapigo/internal/ir"
+	"github.com/cdhdt/lapigo/internal/source"
 )
 
 // TestRender_NeverPanics exercises every malformed-input case called out in
@@ -28,62 +28,62 @@ func TestRender_NeverPanics(t *testing.T) {
 		{
 			name: "line past end of file",
 			src:  []byte("only one line\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 99, Column: 1}, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 99, Column: 1}, Message: "boom"},
 		},
 		{
 			name: "line number zero",
 			src:  []byte("only one line\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 0, Column: 3}, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 0, Column: 3}, Message: "boom"},
 		},
 		{
 			name: "negative line",
 			src:  []byte("only one line\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: -5, Column: 3}, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: -5, Column: 3}, Message: "boom"},
 		},
 		{
 			name: "column past end of line",
 			src:  []byte("short\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 500}, EndColumn: 510, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 500}, EndColumn: 510, Message: "boom"},
 		},
 		{
 			name: "negative column",
 			src:  []byte("short\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: -3}, EndColumn: 2, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: -3}, EndColumn: 2, Message: "boom"},
 		},
 		{
 			name: "empty source, line 1",
 			src:  []byte{},
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 1}, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 1}, Message: "boom"},
 		},
 		{
 			name: "nil source",
 			src:  nil,
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 1}, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 1}, Message: "boom"},
 		},
 		{
 			name: "no trailing newline, points at last line",
 			src:  []byte("first\nsecond line no newline"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 2, Column: 1}, EndColumn: 6, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 2, Column: 1}, EndColumn: 6, Message: "boom"},
 		},
 		{
 			name: "CRLF line endings",
 			src:  []byte("first\r\nsecond\r\nthird\r\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 2, Column: 1}, EndColumn: 6, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 2, Column: 1}, EndColumn: 6, Message: "boom"},
 		},
 		{
 			name: "end column equal to start column",
 			src:  []byte("sort: [-id]\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 8}, EndColumn: 8, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 8}, EndColumn: 8, Message: "boom"},
 		},
 		{
 			name: "end column before start column",
 			src:  []byte("sort: [-id]\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 8}, EndColumn: 3, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 8}, EndColumn: 3, Message: "boom"},
 		},
 		{
 			name: "end column unset (zero)",
 			src:  []byte("sort: [-id]\n"),
-			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 8}, Message: "boom"},
+			d:    diag.Diagnostic{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 8}, Message: "boom"},
 		},
 	}
 
@@ -126,7 +126,7 @@ func TestRender_ZeroPosOmitsLineCol(t *testing.T) {
 func TestRender_CRLFDoesNotShowStrayCarriageReturn(t *testing.T) {
 	src := []byte("first\r\nsecond\r\nthird\r\n")
 	ds := diag.Diagnostics{
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 2, Column: 1}, EndColumn: 7, Message: "boom"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 2, Column: 1}, EndColumn: 7, Message: "boom"},
 	}
 	got := ds.Render(src)
 	if strings.Contains(got, "\r") {
@@ -144,7 +144,7 @@ func TestRender_CRLFDoesNotShowStrayCarriageReturn(t *testing.T) {
 func TestRender_EndColumnBeforeStartStillDrawsACaret(t *testing.T) {
 	src := []byte("sort: [-id]\n")
 	ds := diag.Diagnostics{
-		{File: "lapigo.yaml", Pos: ir.Pos{Line: 1, Column: 8}, EndColumn: 1, Message: "boom"},
+		{File: "lapigo.yaml", Pos: source.Pos{Line: 1, Column: 8}, EndColumn: 1, Message: "boom"},
 	}
 	got := ds.Render(src)
 	lines := strings.Split(got, "\n")

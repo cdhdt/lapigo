@@ -1,5 +1,7 @@
 package ir
 
+import "github.com/cdhdt/lapigo/internal/source"
+
 // Field is one column of an Entity, resolved from a YAML field declaration
 // (spec §3.1).
 //
@@ -12,7 +14,7 @@ package ir
 // the IR resolves the final strings once so no downstream package
 // (template, DDL emitter) has to repeat that resolution.
 type Field struct {
-	Name       At[string]
+	Name       source.At[string]
 	GoName     string
 	Column     string
 	Type       FieldType
@@ -25,7 +27,7 @@ type Field struct {
 	Immutable  bool // accepted on create, rejected on update
 	Version    bool // optimistic concurrency column
 	Max        *int // string length constraint
-	EnumValues []At[string]
+	EnumValues []source.At[string]
 	Default    *DefaultValue
 }
 
