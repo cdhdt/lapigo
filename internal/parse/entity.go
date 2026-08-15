@@ -30,15 +30,26 @@ type pendingRelation struct {
 // *ir.Field pointer once that entity's Fields slice is complete. Same-entity
 // lookups do not share the cross-entity "resolved before the sort"
 // retargeting hazard Relation.Target does (Schema.Entities is what gets
-// sorted, and neither of these points into it), but they are still resolved
-// in the second pass, alongside relations, for one reason: the field a sort
-// key or filter names might be a belongsTo column, whose own ir.Field only
-// exists once the entity's fields: mapping has been fully walked -- which,
-// for a key referencing a field declared later in the same mapping, has not
-// happened yet at the point the sort: or filters: list is read.
+// sorted, and neither of these points into it) -- and, in fact,
+// Entity.Fields is already complete by the time either list is parsed
+// here: buildEntity always finishes buildFieldsAndRelations before it even
+// looks at the sort: or filters: node, regardless of which key came first
+// in the written YAML. Resolving one of these immediately, rather than
+// deferring it, would already be safe.
+//
+// They are carried into the second pass anyway, alongside relations, so
+// that every "not found" diagnostic this package produces -- a bad sort
+// key, a bad filter, a bad relation target -- flows through the same
+// resolveSchema loop instead of splitting reporting between two different
+// code paths.
+// desc is deliberately not carried per-key: the spec's single sort
+// direction (spec §3.3 rule 1) already lives on ir.SortSpec.Desc, returned
+// separately by buildSortSpec, and nothing downstream ever needs to know
+// which sign an individual key was written with once that single direction
+// has been checked consistent -- an earlier version stored one here anyway
+// and never read it back.
 type pendingSortKey struct {
 	name source.At[string]
-	desc bool
 }
 
 type pendingFilter struct {
@@ -50,6 +61,8 @@ type pendingFilter struct {
 // filters for the second pass. name is the entity's own name, already
 // reduced to a source.At[string] by the caller.
 func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entity, []*pendingRelation, []pendingSortKey, []pendingFilter) {
+	r.requireExportableName(name, "entity name")
+
 	m, ok := r.requireMapping(body, entityContext(name.Value))
 	if !ok {
 		return nil, nil, nil, nil
@@ -70,6 +83,8 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 		case "table":
 			s, ok := r.requireString(entry.Value, entityContext(name.Value)+" `table`")
 			if ok {
+				at := atOf(s.Value, s.GetToken())
+				r.requireIdentifier(at, "table name")
 				e.Table = s.Value
 			}
 		case "fields":
@@ -89,6 +104,7 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 	} else {
 		var relations []*pendingRelation
 		e.Fields, relations = r.buildFieldsAndRelations(e, fieldsNode)
+		r.checkFieldCollisions(e)
 		var sortKeys []pendingSortKey
 		if sortNode != nil {
 			e.Sort.Desc, sortKeys = r.buildSortSpec(sortNode, name.Value)
@@ -97,11 +113,11 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 		if filtersNode != nil {
 			filters = r.buildPendingFilters(filtersNode, name.Value)
 		}
-		e.Endpoints = r.buildEndpoints(endpointsNode, e.Table)
+		e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
 		return e, relations, sortKeys, filters
 	}
 
-	e.Endpoints = r.buildEndpoints(endpointsNode, e.Table)
+	e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
 	return e, nil, nil, nil
 }
 
@@ -134,6 +150,36 @@ func (r *resolver) buildFieldsAndRelations(e *ir.Entity, node ast.Node) ([]*ir.F
 		}
 	}
 	return fields, relations
+}
+
+// checkFieldCollisions reports a diagnostic for every field of e beyond the
+// first, in declaration order, whose Column or GoName collides with an
+// earlier field's. This is the check defect 5 exists for: a `belongsTo`
+// FK field's Column and GoName are derived from the relation name
+// ("author" -> Column "author_id", GoName "AuthorID"), so a sibling scalar
+// field explicitly named "author_id" produces the identical pair with no
+// name collision at all ("author" != "author_id") -- Freeze cannot see it,
+// since identity is correct and the field it finds by name is genuinely the
+// only field with that Name. The DDL emitter would emit "author_id" twice
+// and the generated struct would declare "AuthorID" twice; neither
+// compiles.
+func (r *resolver) checkFieldCollisions(e *ir.Entity) {
+	byColumn := make(map[string]*ir.Field, len(e.Fields))
+	byGoName := make(map[string]*ir.Field, len(e.Fields))
+	for _, f := range e.Fields {
+		if prior, ok := byColumn[f.Column]; ok {
+			r.addAt(f.Name, "give each field a distinct column name",
+				"field %q and field %q both use column %q", f.Name.Value, prior.Name.Value, f.Column)
+		} else {
+			byColumn[f.Column] = f
+		}
+		if prior, ok := byGoName[f.GoName]; ok {
+			r.addAt(f.Name, "rename one field so their Go names don't collide (spec §5.6)",
+				"field %q and field %q both produce Go field name %q", f.Name.Value, prior.Name.Value, f.GoName)
+		} else {
+			byGoName[f.GoName] = f
+		}
+	}
 }
 
 // isBelongsTo reports whether a field's option mapping declares

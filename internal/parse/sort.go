@@ -27,6 +27,7 @@ func (r *resolver) buildSortSpec(node ast.Node, entityName string) (desc bool, k
 	}
 
 	haveDirection := false
+	seen := make(map[string]bool, len(seq.Values))
 	for _, v := range seq.Values {
 		s, ok := r.requireString(v, entityContext(entityName)+" `sort` entry")
 		if !ok {
@@ -47,7 +48,16 @@ func (r *resolver) buildSortSpec(node ast.Node, entityName string) (desc bool, k
 				"sort key %q direction conflicts with the rest of the sort spec", s.Value)
 			continue
 		}
-		keys = append(keys, pendingSortKey{name: at, desc: keyDesc})
+		if seen[name] {
+			// A repeated key produces a keyset comparison like
+			// "(id, id) < ($1, $2)" -- meaningless SQL, not merely
+			// redundant.
+			r.addAt(atOf(s.Value, s.GetToken()), "each field may appear at most once in `sort`",
+				"duplicate sort key %q in %s", name, entityContext(entityName))
+			continue
+		}
+		seen[name] = true
+		keys = append(keys, pendingSortKey{name: at})
 	}
 	return desc, keys
 }

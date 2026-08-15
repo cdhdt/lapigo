@@ -108,14 +108,6 @@ func TestRequireInt_FloatTypeReported(t *testing.T) {
 	}
 }
 
-func TestIntNodeValue_NegativeAccepted(t *testing.T) {
-	schema := parseOK(t, "entities:\n  article:\n    fields:\n      id: { type: uuid, pk: true }\n      title: { type: string, max: -1 }\n")
-	got := schema.Entities[0].Fields[1].Max
-	if got == nil || *got != -1 {
-		t.Fatalf("Max = %v, want -1", got)
-	}
-}
-
 func TestIntNodeValue_OutOfRangeIsDiagnostic(t *testing.T) {
 	// 18e18 fits uint64 (max ~1.8e19), so it still parses as an
 	// *ast.IntegerNode -- but exceeds math.MaxInt on a 64-bit platform

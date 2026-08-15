@@ -8,11 +8,22 @@ import (
 )
 
 // relationKeys is the complete set of keys a `type: belongsTo` field's
-// mapping may declare -- the general field keys (`required`, `unique`,
-// `readonly`, ...) still apply (a belongsTo column can be marked
-// `required:` to become NOT NULL, for instance), plus the two relation-only
-// keys `target` and `on_delete`.
-var relationKeys = append(append([]string{}, fieldKeys...), "target", "on_delete")
+// mapping may declare: the subset of the general field keys buildRelationField's
+// own switch actually reads (`pk`, `required`, `unique`, `readonly`,
+// `immutable` -- a belongsTo column can be marked `required:` to become
+// NOT NULL, for instance), plus the two relation-only keys `target` and
+// `on_delete`, plus `type` itself.
+//
+// Deliberately not fieldKeys plus the relation-only two, as an earlier
+// version had it: fieldKeys also lists `max`, `values`, `default` and
+// `version`, none of which buildRelationField's switch has a case for.
+// Whitelisting them let checkUnknownKeys silently accept and then drop
+// them -- `version: true` on a belongsTo in particular means the
+// optimistic-concurrency column silently does not exist, with zero
+// diagnostics telling the schema's author why. This list is exactly the
+// keys the switch below handles, so checkUnknownKeys rejects everything
+// else.
+var relationKeys = []string{"type", "pk", "required", "unique", "readonly", "immutable", "target", "on_delete"}
 
 // buildRelationField resolves one `type: belongsTo` field entry into its FK
 // *ir.Field (the raw "author_id" column: Column, Name and the general
@@ -26,12 +37,15 @@ var relationKeys = append(append([]string{}, fieldKeys...), "target", "on_delete
 // the IR. So a belongsTo entry produces *both* an ir.Field (the FK column,
 // found by Entity.Lookup like any other field, usable as a sort key or
 // filter) and an ir.Relation (the association metadata: target, GoType,
-// on_delete). The field's Type and Nullable are only finalized in the
-// second pass, once the target's PK field is known (see resolvePendingRelations);
-// until then it carries FieldTypeUUID as a placeholder -- correct for every
-// belongsTo in the canonical schema, since every PK in it is a uuid, and
-// overwritten regardless once the real target PK type is resolved.
+// on_delete). The field's Nullable is resolved here, in this same pass, from
+// its own `required:`/`pk:` options -- exactly like any other field's. Its
+// Type is the one piece only the second pass can finish: it is set below to
+// FieldTypeUUID as a placeholder, correct for every belongsTo in the
+// canonical schema (every PK in it is a uuid), and is overwritten once the
+// target's real PK type is known (see resolvePendingRelations).
 func (r *resolver) buildRelationField(e *ir.Entity, name source.At[string], body ast.Node) (*ir.Field, *pendingRelation) {
+	r.requireExportableName(name, "field name")
+
 	m, ok := r.requireMapping(body, fieldContext(name.Value))
 	if !ok {
 		return nil, nil
@@ -122,6 +136,70 @@ func (r *resolver) buildRelationField(e *ir.Entity, name source.At[string], body
 	rel.nullable = f.Nullable
 
 	return f, rel
+}
+
+// resolvePendingRelations resolves every pending belongsTo relation in the
+// schema, iterating to a fixed point rather than a single declaration-order
+// pass -- the regression this exists to prevent (defect 6): a plain,
+// single-pass "for each relation, resolve" walk sets
+// rel.field.Type = target.PK.Type using whatever target.PK.Type currently
+// holds, which is only correct once target.PK has itself finished
+// resolving. When target.PK is itself an unresolved belongsTo FK field
+// (a PK that is a belongsTo to another PK that is a belongsTo, ...), a
+// single pass in declaration order can visit the dependent relation before
+// the one it depends on, and silently copies the FieldTypeUUID placeholder
+// instead of the real, eventually-resolved type -- with zero diagnostics,
+// since the resolved pointer identity is still correct and Freeze has
+// nothing to compare it against.
+//
+// Each pass resolves every relation whose target's PK is not itself an
+// unresolved FK field of another pending relation, then repeats over
+// whatever is left. A pass that makes no progress means every remaining
+// relation depends on another remaining relation's target PK -- a cycle of
+// PK-belongsTo fields, which can never resolve a concrete type -- and is
+// reported as its own diagnostic rather than looping forever.
+func (r *resolver) resolvePendingRelations(schema *ir.Schema, all []*pendingRelation) {
+	// fkOwner maps an FK *ir.Field back to the pendingRelation that will
+	// finalize its Type, so resolving one relation can tell whether the
+	// target's PK is a field this same fixed point still has to resolve.
+	fkOwner := make(map[*ir.Field]*pendingRelation, len(all))
+	for _, rel := range all {
+		fkOwner[rel.field] = rel
+	}
+
+	resolved := make(map[*pendingRelation]bool, len(all))
+	remaining := all
+	for len(remaining) > 0 {
+		var deferred []*pendingRelation
+		for _, rel := range remaining {
+			if rel.targetName.Value != "" {
+				if target := schema.Lookup(rel.targetName.Value); target != nil && target.PK != nil {
+					if depRel, isPendingFK := fkOwner[target.PK]; isPendingFK && !resolved[depRel] {
+						// target's own PK has not finished resolving yet;
+						// come back to this relation on a later pass.
+						deferred = append(deferred, rel)
+						continue
+					}
+				}
+			}
+			r.resolvePendingRelation(schema, rel)
+			resolved[rel] = true
+		}
+		if len(deferred) == len(remaining) {
+			// No relation in this pass could be resolved: every one of them
+			// is waiting on another relation in the same set, which is
+			// waiting in turn -- a cycle. Report each and stop; resolving
+			// none of them further is safe, since a diagnostic already
+			// means the schema will not be used (see Parse).
+			for _, rel := range deferred {
+				r.addAt(rel.nameAt,
+					"break the cycle: give one entity in the chain a primary key that is not itself a belongsTo",
+					"belongsTo field %q is part of a cycle of primary keys, whose type can never be resolved", rel.name)
+			}
+			return
+		}
+		remaining = deferred
+	}
 }
 
 // resolvePendingRelation resolves rel.field's owning entity's Relation and

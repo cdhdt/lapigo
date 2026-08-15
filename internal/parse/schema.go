@@ -27,10 +27,20 @@ type entityBuild struct {
 
 // resolveSchema walks the whole document body into a *ir.Schema, following
 // the two-pass structure the parser brief mandates: every *ir.Field for
-// every entity first (buildEntity, via buildFieldsAndRelations), then, only
-// after Schema.Entities has been sorted by name, every pointer that must
-// reference one of them -- Entity.PK, SortKey.Field, Filter.Field and
-// Relation.Target.
+// every entity first (buildEntity, via buildFieldsAndRelations), then every
+// pointer that must reference one of them.
+//
+// Entity.PK (resolvePK) and version-field validation (resolveVersion) are
+// resolved in the first pass, immediately after each entity's own Fields
+// are built -- they only ever look within that same entity's Fields, so
+// they need nothing from any other entity and do not have to wait for
+// Schema.Entities to exist at all, let alone be sorted. SortKey.Field,
+// Filter.Field and Relation.Target are the ones that genuinely wait for the
+// second pass: Relation.Target because it looks up a *different* entity by
+// name, which is only safe once Schema.Entities has been sorted (see the
+// second pass below); SortKey.Field and Filter.Field because the field they
+// name might be a belongsTo column appended later in the same entity's
+// `fields:` mapping than the `sort:`/`filters:` list that names it.
 //
 // A caller checks r.diags.HasErrors() after this returns: on any error the
 // returned *ir.Schema may be incomplete (nil PK, unresolved relations) and
@@ -71,8 +81,11 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 			continue
 		}
 		r.resolvePK(entity, e.Key)
+		r.resolveVersion(entity)
 		builds = append(builds, entityBuild{entity: entity, nameAt: e.Key, relations: relations, sortKeys: sortKeys, filters: filters})
 	}
+
+	r.checkDuplicateTables(builds)
 
 	schema := &ir.Schema{Entities: make([]*ir.Entity, len(builds))}
 	for i, b := range builds {
@@ -85,10 +98,19 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 	// Second pass. schema.Entities is sorted now: resolving Relation.Target
 	// against it here, and not before, is what keeps every resolved
 	// pointer aimed at the entity it actually names (spec §2.2).
+	//
+	// Relations are resolved together, across every entity, in one
+	// fixed-point pass (resolvePendingRelations) rather than per-entity in
+	// declaration order -- a transitive chain of PK-belongsTo fields needs
+	// to see relations outside its own entity's list resolve first; see
+	// resolvePendingRelations' doc comment (defect 6).
+	var allRelations []*pendingRelation
 	for _, b := range builds {
-		for _, rel := range b.relations {
-			r.resolvePendingRelation(schema, rel)
-		}
+		allRelations = append(allRelations, b.relations...)
+	}
+	r.resolvePendingRelations(schema, allRelations)
+
+	for _, b := range builds {
 		for _, sk := range b.sortKeys {
 			field := b.entity.Lookup(sk.name.Value)
 			if field == nil {
@@ -108,6 +130,26 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 	}
 
 	return schema
+}
+
+// checkDuplicateTables reports a diagnostic for every entity beyond the
+// first, in declaration order, whose Table (explicit or defaulted) collides
+// with an earlier entity's -- two entities mapped to the same table compile
+// cleanly today and panic identically to a duplicate endpoint, only at
+// migration/startup instead of routing: DDL cannot create the same table
+// twice, and neither can the generated store disambiguate which entity a
+// row belongs to.
+func (r *resolver) checkDuplicateTables(builds []entityBuild) {
+	firstByTable := make(map[string]entityBuild, len(builds))
+	for _, b := range builds {
+		if prior, ok := firstByTable[b.entity.Table]; ok {
+			r.addAt(b.nameAt,
+				"give each entity a distinct `table:`, or accept the default (entity name + \"s\")",
+				"duplicate table %q (already used by entity %q)", b.entity.Table, prior.entity.Name)
+			continue
+		}
+		firstByTable[b.entity.Table] = b
+	}
 }
 
 // resolvePK finds the field marked `pk: true` among e's own fields and sets
@@ -133,5 +175,32 @@ func (r *resolver) resolvePK(e *ir.Entity, nameAt source.At[string]) {
 			r.addAt(f.Name, "exactly one field may be marked `pk: true`",
 				"entity %q has %d fields marked `pk: true`, want exactly 1", e.Name, len(pks))
 		}
+	}
+}
+
+// resolveVersion reports a diagnostic -- with a position, before
+// ir.Schema.Freeze ever runs -- for the one condition spec §3.1 states and
+// Freeze would otherwise catch as a bare, positionless "this is a bug in
+// lapigo" error: more than one field marked `version: true` in the same
+// entity. Unlike resolvePK, there is no "zero" case to reject: a version
+// column is optional (spec §3.1's "at most one"), not required.
+//
+// Beside resolvePK deliberately, not folded into it: the two checks share
+// nothing but the "find every field with a bool flag set, and complain
+// about more than one" shape, and PK has a zero-case resolvePK also has to
+// handle that Version does not.
+func (r *resolver) resolveVersion(e *ir.Entity) {
+	var versions []*ir.Field
+	for _, f := range e.Fields {
+		if f.Version {
+			versions = append(versions, f)
+		}
+	}
+	if len(versions) <= 1 {
+		return
+	}
+	for _, f := range versions {
+		r.addAt(f.Name, "at most one field may be marked `version: true` (spec §3.1)",
+			"entity %q has %d fields marked `version: true`, want at most 1", e.Name, len(versions))
 	}
 }
