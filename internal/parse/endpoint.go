@@ -20,15 +20,17 @@ var endpointKeywords = map[string]ir.EndpointKind{
 // endpointKeywordNames is endpointKeywords' key set, for edit-distance
 // suggestions against an unrecognised entry.
 //
-// Built as a sorted slice, not left as a range over endpointKeywords: Go
-// randomises map iteration order per process, and suggest's tie-break
-// ("d == bestDist && k < best") only makes the final choice
-// order-independent if the vocabulary it walks is itself in a fixed order.
-// Ranging the map directly reproduced CLAUDE.md's determinism rule broken
-// exactly the way it warns about -- the same ambiguous input reporting a
-// different suggestion in different process runs, invisible to any
-// in-process test since the map is ranged once at package init and stays
-// however that one run ordered it.
+// Sorted rather than left in map iteration order. Go randomises map
+// iteration per process, and ranging the map directly is how CLAUDE.md's
+// determinism rule got broken exactly the way it warns about: the same
+// ambiguous input reported a different suggestion in different process runs,
+// invisible to any in-process test since the map is ranged once at package
+// init and keeps whatever order that one run produced.
+//
+// The sort is defence in depth, not the load-bearing fix. suggest's
+// lexicographic tie-break is independently sufficient — see its doc comment
+// for the mutation results establishing that either one alone holds the
+// property, and that only removing both breaks it.
 var endpointKeywordNames = func() []string {
 	out := make([]string, 0, len(endpointKeywords))
 	for k := range endpointKeywords {

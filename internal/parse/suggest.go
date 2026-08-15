@@ -22,11 +22,20 @@ const suggestThreshold = 2
 // minimum here makes the guard load-bearing: bestDist can genuinely exceed
 // suggestThreshold when the nearest known entry is still far away.
 //
-// Ties are broken deterministically by the lexicographically smaller
-// candidate (d == bestDist && k < best), not by insertion order -- callers
-// must pass a vocabulary already in a stable order (sorted, not ranged from
-// a map) for this to be reproducible across processes; see
-// endpointKeywordNames and typeKeywordSuggestions.
+// Ties are broken by the lexicographically smaller candidate
+// (d == bestDist && k < best). That rule alone makes the result
+// order-independent: it selects the smallest name among all entries at the
+// minimum distance, whichever order they arrive in. Callers do NOT have to
+// pass a sorted vocabulary for reproducibility.
+//
+// An earlier version of this comment claimed they did. Mutation testing
+// disproved it: removing sort.Strings from endpointKeywordNames leaves the
+// cross-process determinism test green, and so does removing this tie-break
+// on its own. Only removing both makes it fail. The sorting in
+// endpointKeywordNames and typeKeywordSuggestions is therefore defence in
+// depth, and is worth keeping for any other consumer of those slices — but
+// this function does not depend on it, and a future reader must not delete
+// this tie-break believing the sort covers it.
 func suggest(got string, known []string) string {
 	best := ""
 	haveBest := false
