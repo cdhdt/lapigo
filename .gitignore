@@ -1,0 +1,30 @@
+# Binaries
+/lapigo
+/bin/
+/dist/
+*.exe
+*.test
+
+# Go
+vendor/
+*.out
+coverage.*
+
+# Secrets and local configuration — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+.lapigo.local.yaml
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local Claude Code settings (may contain machine-specific paths)
+.claude/settings.local.json
