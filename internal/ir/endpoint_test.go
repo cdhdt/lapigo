@@ -22,9 +22,13 @@ func TestEndpointKind_String(t *testing.T) {
 	}
 }
 
+// TestEndpointKind_String_Unknown asserts the exact placeholder. "list" is
+// itself non-empty, so a got == "" assertion would not catch
+// EndpointKind.String() wrongly reporting an out-of-range value as "list".
 func TestEndpointKind_String_Unknown(t *testing.T) {
-	var k EndpointKind = 999
-	if got := k.String(); got == "" {
-		t.Error("String() on an unknown EndpointKind returned empty string, want a diagnostic placeholder")
+	k := EndpointKind(99)
+	const want = "EndpointKind(99)"
+	if got := k.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
 }
