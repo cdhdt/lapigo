@@ -1,0 +1,4 @@
+lapigo.yaml:9:7: enum type "article.status_kind" and enum type "article_status.kind" both produce Go identifier "ArticleStatusKind"
+   9 |       kind: { type: enum, values: [draft, published], required: true }
+     |       ^^^^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)

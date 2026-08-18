@@ -1,0 +1,4 @@
+lapigo.yaml:8:7: field "validate" of entity "zzz_widget" has Go name "Validate", which collides with a method the generator emits on that struct
+   8 |       validate: { type: string }
+     |       ^^^^^^^^
+   rename it; reserved method names: Validate (spec §5.6)

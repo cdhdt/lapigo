@@ -1,0 +1,10 @@
+entities:
+  a_x:
+    fields:
+      id: { type: uuid, pk: true }
+  aX:
+    fields:
+      id: { type: uuid, pk: true }
+  a__x:
+    fields:
+      id: { type: uuid, pk: true }

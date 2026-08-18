@@ -1,0 +1,8 @@
+entities:
+  article:
+    fields:
+      id:       { type: uuid, pk: true }
+      validate: { type: belongsTo, target: user }
+  user:
+    fields:
+      id: { type: uuid, pk: true }

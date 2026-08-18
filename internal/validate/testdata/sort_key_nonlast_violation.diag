@@ -1,0 +1,9 @@
+lapigo.yaml:6:12: sort key "col" must not be nullable
+   6 |     sort: [col, id]
+     |            ^^^
+   mark `col` `required: true`, or remove it from `sort` (spec §3.3 rule 3)
+
+lapigo.yaml:6:12: warning: sort key "col" may change after the row is created
+   6 |     sort: [col, id]
+     |            ^^^
+   a row whose sort value changes can move relative to a live cursor; this is inherent to keyset pagination and does not block generation. Mark `col` `immutable: true` if its value must never change once set (spec §3.3 rule 5)

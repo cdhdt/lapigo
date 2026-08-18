@@ -1,0 +1,9 @@
+lapigo.yaml:6:12: sort key "price" must not be nullable
+   6 |     sort: [price]
+     |            ^^^^^
+   mark `price` `required: true`, or remove it from `sort` (spec §3.3 rule 3)
+
+lapigo.yaml:6:12: warning: sort key "price" may change after the row is created
+   6 |     sort: [price]
+     |            ^^^^^
+   a row whose sort value changes can move relative to a live cursor; this is inherent to keyset pagination and does not block generation. Mark `price` `immutable: true` if its value must never change once set (spec §3.3 rule 5)

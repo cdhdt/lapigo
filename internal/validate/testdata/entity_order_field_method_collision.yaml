@@ -1,0 +1,8 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+  zzz_widget:
+    fields:
+      id:       { type: uuid, pk: true }
+      validate: { type: string }

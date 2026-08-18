@@ -1,0 +1,9 @@
+lapigo.yaml:2:3: entity "aX" and entity "a_x" both produce Go identifier "AX"
+   2 |   a_x:
+     |   ^^^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)
+
+lapigo.yaml:8:3: entity "aX" and entity "a__x" both produce Go identifier "AX"
+   8 |   a__x:
+     |   ^^^^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)
