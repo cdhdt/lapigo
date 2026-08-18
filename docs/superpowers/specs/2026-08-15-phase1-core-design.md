@@ -146,7 +146,7 @@ type Relation struct {
     NameSpan   source.Span
     GoName     string            // "Author"
     Target     *Entity           // resolved
-    TargetSpan source.Span       // the `target:` value; zero when `target:` was omitted
+    TargetSpan source.Span       // the `target:` value; always valid (see below)
     Column     string            // "author_id"
     GoType     string            // from the target's PK
     Nullable   bool
@@ -159,13 +159,19 @@ type Endpoint struct {
 }
 ```
 
-**`Relation.TargetSpan` is the zero `Span` when the schema omitted `target:`
-entirely.** The parser reports that omission itself, at the relation's own name,
-and never records a span for a value that was never written — which is exactly
-the "zero `Span` means no position" rule `source.Span` defines. A future
-diagnostic that wants to blame a *missing* `target:` must therefore anchor on
-`NameSpan`, not on `TargetSpan`; reaching for the zero span would print
-`lapigo.yaml:0:0:`, the misleading header §4 exists to prevent.
+**Every `Relation` that exists carries a valid `TargetSpan`.** A relation is
+appended only once its `target:` has been read *and* resolved to a real entity:
+an omitted, empty, or unresolvable target reports a diagnostic and returns
+before the append, so no `Relation` is built at all. There is therefore no such
+thing as a relation whose target was never written, and a diagnostic blaming a
+*missing* `target:` cannot be expressed through this type — it must be reported
+by the parser, at the relation's own name, before any `Relation` exists.
+
+This is an invariant, so `Schema.Freeze` must check it rather than this
+paragraph asserting it. An earlier revision of this spec claimed the opposite —
+that `TargetSpan` was the zero `Span` when `target:` was omitted — which an
+adversarial review disproved by enumerating all four target forms: only the
+resolved one yields a `Relation`, and its span is always valid.
 
 **Sort keys and filters hold resolved `*Field` pointers, not names.** A template
 rendering a comparison needs the field's Go type, column and nullability; a
