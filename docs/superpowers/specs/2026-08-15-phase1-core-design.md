@@ -146,7 +146,7 @@ type Relation struct {
     NameSpan   source.Span
     GoName     string            // "Author"
     Target     *Entity           // resolved
-    TargetSpan source.Span       // the `target:` value, for a bad reference
+    TargetSpan source.Span       // the `target:` value; zero when `target:` was omitted
     Column     string            // "author_id"
     GoType     string            // from the target's PK
     Nullable   bool
@@ -158,6 +158,14 @@ type Endpoint struct {
     Path string
 }
 ```
+
+**`Relation.TargetSpan` is the zero `Span` when the schema omitted `target:`
+entirely.** The parser reports that omission itself, at the relation's own name,
+and never records a span for a value that was never written — which is exactly
+the "zero `Span` means no position" rule `source.Span` defines. A future
+diagnostic that wants to blame a *missing* `target:` must therefore anchor on
+`NameSpan`, not on `TargetSpan`; reaching for the zero span would print
+`lapigo.yaml:0:0:`, the misleading header §4 exists to prevent.
 
 **Sort keys and filters hold resolved `*Field` pointers, not names.** A template
 rendering a comparison needs the field's Go type, column and nullability; a
