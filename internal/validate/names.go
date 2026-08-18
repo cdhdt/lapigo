@@ -88,24 +88,11 @@ func entityMembers(e *ir.Entity) []entityMember {
 		})
 	}
 	for _, rel := range e.Relations {
-		var pos, end source.Pos
-		// The relation's own FK column field shares its Name.Value with the
-		// relation -- both are resolved from the same `type: belongsTo`
-		// YAML entry (internal/parse/relation.go's buildRelationField sets
-		// the FK field's Name to the belongsTo key itself, and
-		// resolvePendingRelation sets Relation.Name from the same
-		// pendingRelation.name) -- so looking it up by that shared name is
-		// a genuine, exact anchor for a diagnostic about the relation, not
-		// a guess. ir.Relation itself carries no position: spec §2.2
-		// defines it without one.
-		if fk := e.Lookup(rel.Name); fk != nil {
-			pos, end = fk.Name.Pos, fk.Name.End
-		}
 		members = append(members, entityMember{
 			goName: rel.GoName,
 			label:  fmt.Sprintf("relation %q", rel.Name),
-			pos:    pos,
-			end:    end,
+			pos:    rel.NameSpan.Start,
+			end:    rel.NameSpan.End,
 		})
 	}
 	return members
@@ -172,20 +159,10 @@ type packageDecl struct {
 func schemaPackageDecls(schema *ir.Schema) []packageDecl {
 	var decls []packageDecl
 	for _, e := range schema.Entities {
-		var pos, end source.Pos
-		// ir.Entity carries no position of its own: spec §2.2 defines Entity
-		// without one, consistent with source.At's own doc comment that it
-		// is "applied selectively, to the leaves validation actually
-		// blames: identifiers, enum members, sort keys" -- an entity's own
-		// name is not among them. Its primary key field is the closest
-		// genuine anchor available: always present (ir.Schema.Freeze
-		// requires exactly one PK per entity) and always inside the right
-		// entity's own `fields:` block, even though the diagnostic is about
-		// the entity's name, not the PK field's.
-		if e.PK != nil {
-			pos, end = e.PK.Name.Pos, e.PK.Name.End
-		}
-		decls = append(decls, packageDecl{goName: e.GoName, kind: "entity", label: e.Name, pos: pos, end: end})
+		decls = append(decls, packageDecl{
+			goName: e.GoName, kind: "entity", label: e.Name,
+			pos: e.NameSpan.Start, end: e.NameSpan.End,
+		})
 		for _, f := range e.Fields {
 			if f.Type != ir.FieldTypeEnum {
 				continue

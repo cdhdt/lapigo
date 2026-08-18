@@ -71,9 +71,10 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 	r.checkUnknownKeys(entries, entityContext(name.Value), entityKeys)
 
 	e := &ir.Entity{
-		Name:   name.Value,
-		GoName: goName(name.Value),
-		Table:  defaultTableName(name.Value),
+		Name:     name.Value,
+		NameSpan: name.Span(),
+		GoName:   goName(name.Value),
+		Table:    defaultTableName(name.Value),
 	}
 
 	var fieldsNode ast.Node
@@ -86,6 +87,7 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 				at := atOf(s.Value, s.GetToken())
 				r.requireIdentifier(at, "table name")
 				e.Table = s.Value
+				e.TableSpan = at.Span()
 			}
 		case "fields":
 			fieldsNode = entry.Value

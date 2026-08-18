@@ -1,5 +1,7 @@
 package ir
 
+import "github.com/cdhdt/lapigo/internal/source"
+
 // Schema is the fully resolved form of one lapigo.yaml file: every default
 // expanded, every relation resolved to its target Entity, every sort key and
 // filter resolved to its target Field. Templates consume a *Schema and
@@ -46,10 +48,12 @@ func (s *Schema) Lookup(name string) *Entity {
 // on Entity could not represent any of them correctly. The render step
 // builds a per-file import set instead.
 type Entity struct {
-	Name      string // as written in lapigo.yaml
-	GoName    string // validated Go identifier
+	Name      string      // as written in lapigo.yaml
+	NameSpan  source.Span // where Name itself was written
+	GoName    string      // validated Go identifier
 	Table     string
-	Fields    []*Field // declaration order, not sorted — see Lookup. Pointer slice for the same reason as Schema.Entities.
+	TableSpan source.Span // the `table:` value; zero when Table was defaulted, not written
+	Fields    []*Field    // declaration order, not sorted — see Lookup. Pointer slice for the same reason as Schema.Entities.
 	PK        *Field
 	Sort      SortSpec
 	Filters   []Filter

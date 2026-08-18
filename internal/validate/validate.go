@@ -10,10 +10,10 @@
 // pagination, are filters and sort keys legal for their field's type, and do
 // the Go identifiers the generator is about to emit collide with each other.
 //
-// This package never modifies internal/{source,ir,diag,parse}; where one of
-// them cannot express what a diagnostic here would ideally point at (see
-// sortKeySpan and validateFilters' doc comments for two such gaps), the
-// limitation is documented and worked around, not patched upstream.
+// This package never modifies internal/{source,ir,diag,parse}. Every
+// diagnostic here blames the exact source span the offending IR node
+// carries -- SortKey.Span, Filter.Span, Entity.NameSpan, Relation.NameSpan
+// -- rather than reconstructing or approximating one (spec §2.2).
 package validate
 
 import (

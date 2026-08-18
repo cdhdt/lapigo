@@ -2,11 +2,9 @@ package validate
 
 import (
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/cdhdt/lapigo/internal/diag"
 	"github.com/cdhdt/lapigo/internal/ir"
-	"github.com/cdhdt/lapigo/internal/source"
 )
 
 // validateSort applies spec §3.3 rules 2-5 to e's declared sort. Rule 1
@@ -40,8 +38,7 @@ func validateSortKeyEligibility(e *ir.Entity, k ir.SortKey, file string, diags *
 	if f.IsSortEligible() == "" {
 		return
 	}
-	pos, end := sortKeySpan(e, k)
-	d := diag.Diagnostic{Severity: diag.Error, File: file, Pos: pos, EndColumn: end.Column}
+	d := diag.Diagnostic{Severity: diag.Error, File: file, Pos: k.Span.Start, EndColumn: k.Span.End.Column}
 	switch {
 	case f.Nullable:
 		d.Message = fmt.Sprintf("sort key %q must not be nullable", f.Name.Value)
@@ -80,7 +77,7 @@ func validateSortKeyUniqueness(e *ir.Entity, k ir.SortKey, file string, diags *d
 	if f.PK || f.Unique {
 		return
 	}
-	pos, end := sortKeySpan(e, k)
+	pos, end := k.Span.Start, k.Span.End
 	sign := ""
 	if e.Sort.Desc {
 		sign = "-"
@@ -130,7 +127,7 @@ func validateSortKeyMutability(e *ir.Entity, k ir.SortKey, file string, diags *d
 	if f.PK || f.ReadOnly || f.Immutable || f.Default != nil {
 		return
 	}
-	pos, end := sortKeySpan(e, k)
+	pos, end := k.Span.Start, k.Span.End
 	diags.Add(diag.Diagnostic{
 		Severity:  diag.Warning,
 		File:      file,
@@ -143,41 +140,4 @@ func validateSortKeyMutability(e *ir.Entity, k ir.SortKey, file string, diags *d
 				"change once set (spec §3.3 rule 5)",
 			f.Name.Value),
 	})
-}
-
-// sortKeySpan reconstructs the start/end position of a sort key as it was
-// written in the entity's `sort:` list. ir.SortKey carries only a start Pos
-// (see its own doc comment) -- unlike source.At, the end position
-// internal/parse computed for this exact span while building the IR
-// (parse/pos.go's atOf, called from buildSortSpec) is discarded before it
-// reaches ir.SortKey, so this package must derive a width rather than reuse
-// one.
-//
-// The width is the field's own written name (Field.Name.Value, identical to
-// what a user types after the sort's direction sign) plus one rune for a
-// leading '-' when the whole spec is descending. This is exact, not a guess,
-// for a descending spec: spec §3.3 rule 1 (checked by internal/parse before
-// this package ever runs) accepts a uniform-direction sort only, and the
-// only sign internal/parse's splitSortSign resolves to a descending key is a
-// leading '-' -- so every key of a descending spec that reaches this package
-// was necessarily written with one. An ascending spec is genuinely
-// ambiguous: `id` and `+id` both parse to the same ascending key, and
-// internal/parse deliberately does not retain which one was written (see
-// parse/entity.go's pendingSortKey doc comment: "an earlier version stored
-// one here anyway and never read it back"). This function assumes the
-// unsigned, unprefixed form for an ascending key -- the only form every
-// ascending example in spec §3 and this package's own fixtures uses -- so a
-// key actually written `+id` would get a caret one column short of its true
-// end. That gap is real, and the fix is upstream: ir.SortKey would need to
-// carry a source.At[string] the way ir.Field.Name does, which is out of this
-// package's scope (see this package's own doc comment on not touching
-// internal/ir) and is reported in the final task summary instead.
-func sortKeySpan(e *ir.Entity, k ir.SortKey) (start, end source.Pos) {
-	start = k.Pos
-	width := utf8.RuneCountInString(k.Field.Name.Value)
-	if e.Sort.Desc {
-		width++
-	}
-	end = source.Pos{Line: start.Line, Column: start.Column + width}
-	return start, end
 }

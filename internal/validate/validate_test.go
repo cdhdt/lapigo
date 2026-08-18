@@ -123,9 +123,9 @@ func TestValidate_SortKeyNotUnique_ExactFields(t *testing.T) {
 }
 
 // TestValidate_EntityNameCollision_ExactFields pins the entity/entity
-// collision diagnostic's exact fields, including the PK-field fallback
-// position this package uses because ir.Entity carries no position of its
-// own (see schemaPackageDecls' doc comment).
+// collision diagnostic's exact fields: it blames Entity.NameSpan, the
+// colliding entity's own declared name in `entities:`, not any field inside
+// it (see schemaPackageDecls' doc comment).
 func TestValidate_EntityNameCollision_ExactFields(t *testing.T) {
 	f := readFixture(t, "entity_name_collision")
 	schema, parseDiags := parse.Parse(f)
@@ -141,8 +141,8 @@ func TestValidate_EntityNameCollision_ExactFields(t *testing.T) {
 	want := diag.Diagnostic{
 		Severity:  diag.Error,
 		File:      "lapigo.yaml",
-		Pos:       source.Pos{Line: 4, Column: 7},
-		EndColumn: 9,
+		Pos:       source.Pos{Line: 2, Column: 3},
+		EndColumn: 15,
 		Message:   `entity "userProfile" and entity "user_profile" both produce Go identifier "UserProfile"`,
 		Hint:      "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
 	}

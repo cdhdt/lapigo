@@ -242,12 +242,14 @@ func (r *resolver) resolvePendingRelation(schema *ir.Schema, rel *pendingRelatio
 		goType = target.PK.GoType()
 	}
 	rel.entity.Relations = append(rel.entity.Relations, ir.Relation{
-		Name:     rel.name,
-		GoName:   goName(rel.name),
-		Target:   target,
-		Column:   rel.field.Column,
-		GoType:   goType,
-		Nullable: rel.nullable,
-		OnDelete: rel.onDelete,
+		Name:       rel.name,
+		NameSpan:   rel.nameAt.Span(),
+		GoName:     goName(rel.name),
+		Target:     target,
+		TargetSpan: rel.targetName.Span(),
+		Column:     rel.field.Column,
+		GoType:     goType,
+		Nullable:   rel.nullable,
+		OnDelete:   rel.onDelete,
 	})
 }

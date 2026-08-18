@@ -117,7 +117,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 				r.addAt(sk.name, "", "sort key %q is not a field of entity %q", sk.name.Value, b.entity.Name)
 				continue
 			}
-			b.entity.Sort.Keys = append(b.entity.Sort.Keys, ir.SortKey{Field: field, Pos: sk.name.Pos})
+			b.entity.Sort.Keys = append(b.entity.Sort.Keys, ir.SortKey{Field: field, Span: sk.name.Span()})
 		}
 		for _, filt := range b.filters {
 			field := b.entity.Lookup(filt.name.Value)
@@ -125,7 +125,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 				r.addAt(filt.name, "", "filter %q is not a field of entity %q", filt.name.Value, b.entity.Name)
 				continue
 			}
-			b.entity.Filters = append(b.entity.Filters, ir.Filter{Field: field, Op: ir.FilterOpEq})
+			b.entity.Filters = append(b.entity.Filters, ir.Filter{Field: field, Op: ir.FilterOpEq, Span: filt.name.Span()})
 		}
 	}
 

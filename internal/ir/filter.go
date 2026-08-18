@@ -1,6 +1,10 @@
 package ir
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/cdhdt/lapigo/internal/source"
+)
 
 // FilterOp is a comparison operator usable in a Filter. It is defined as a
 // closed enumeration now, even though phase 1 supports exactly one member
@@ -26,7 +30,13 @@ func (op FilterOp) String() string {
 // one. Field is a resolved *Field pointer, not a name, for the same reason
 // as SortKey.Field: a template needs the column, Go type and nullability
 // without performing a lookup.
+//
+// Span is the `filters:` list entry itself, not the filtered field's own
+// declaration — an earlier revision carried no position at all here, so a
+// diagnostic about a bad filter pointed at the field's `fields:` entry
+// instead of the offending line in `filters:` (spec §2.2).
 type Filter struct {
 	Field *Field
 	Op    FilterOp
+	Span  source.Span
 }

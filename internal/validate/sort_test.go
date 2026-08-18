@@ -25,7 +25,7 @@ func TestValidateSortKeyEligibility_UnknownFieldType(t *testing.T) {
 		Name: source.NewAt("mystery", source.Pos{Line: 3, Column: 5}, source.Pos{Line: 3, Column: 12}),
 		Type: ir.FieldType(99),
 	}
-	k := ir.SortKey{Field: f, Pos: source.Pos{Line: 3, Column: 5}}
+	k := ir.SortKey{Field: f, Span: source.NewSpan(source.Pos{Line: 3, Column: 5}, source.Pos{Line: 3, Column: 12})}
 
 	var diags diag.Diagnostics
 	validateSortKeyEligibility(e, k, "lapigo.yaml", &diags)
@@ -44,38 +44,5 @@ func TestValidateSortKeyEligibility_UnknownFieldType(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("validateSortKeyEligibility diagnostic =\n%+v\nwant:\n%+v", got, want)
-	}
-}
-
-// TestSortKeySpan pins sortKeySpan's width reconstruction directly: one rune
-// for a leading '-' when the whole spec is descending, none when it is
-// ascending, on top of the field's own written name -- see sortKeySpan's
-// doc comment for why this is exact for a descending spec and an assumption
-// for an ascending one.
-func TestSortKeySpan(t *testing.T) {
-	tests := []struct {
-		name     string
-		desc     bool
-		field    string
-		startCol int
-		wantEnd  int
-	}{
-		{"descending adds one column for the sign", true, "created_at", 12, 23},
-		{"ascending has no sign column", false, "id", 8, 10},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := &ir.Entity{Sort: ir.SortSpec{Desc: tt.desc}}
-			f := &ir.Field{Name: source.Bare(tt.field)}
-			k := ir.SortKey{Field: f, Pos: source.Pos{Line: 1, Column: tt.startCol}}
-
-			start, end := sortKeySpan(e, k)
-			if start != (source.Pos{Line: 1, Column: tt.startCol}) {
-				t.Errorf("start = %+v, want {Line:1 Column:%d}", start, tt.startCol)
-			}
-			if end != (source.Pos{Line: 1, Column: tt.wantEnd}) {
-				t.Errorf("end = %+v, want {Line:1 Column:%d}", end, tt.wantEnd)
-			}
-		})
 	}
 }
