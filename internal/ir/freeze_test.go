@@ -38,8 +38,11 @@ func buildResolvedSchema() (schema *Schema, widget, component *Entity) {
 			Desc: true,
 			Keys: []SortKey{{Field: createdAt}, {Field: widgetID}},
 		},
-		Filters:   []Filter{{Field: status, Op: FilterOpEq}},
-		Relations: []Relation{{Name: "component", GoName: "Component", Target: component, Column: "component_id"}},
+		Filters: []Filter{{Field: status, Op: FilterOpEq}},
+		Relations: []Relation{{
+			Name: "component", GoName: "Component", Target: component, Column: "component_id",
+			TargetSpan: source.Span{Start: source.Pos{Line: 5, Column: 20}, End: source.Pos{Line: 5, Column: 29}},
+		}},
 	}
 
 	schema = &Schema{Entities: []*Entity{widget, component}} // deliberately unsorted
@@ -231,14 +234,60 @@ func TestSchema_Freeze_RelationTargetNotInSchema(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
 	foreignEntity := &Entity{Name: "widget"} // same name as e, deliberately not in schema.Entities
 	e := &Entity{
-		Name:      "widget",
-		Fields:    []*Field{id},
-		PK:        id,
-		Relations: []Relation{{Name: "owner", Target: foreignEntity}},
+		Name:   "widget",
+		Fields: []*Field{id},
+		PK:     id,
+		Relations: []Relation{{
+			Name: "owner", Target: foreignEntity,
+			// A valid TargetSpan, so this test fails only for the
+			// membership defect it names -- not incidentally, for the
+			// separate TargetSpan invariant TestSchema_Freeze_
+			// RelationTargetSpanIsZero exists to pin.
+			TargetSpan: source.Span{Start: source.Pos{Line: 1, Column: 1}, End: source.Pos{Line: 1, Column: 2}},
+		}},
 	}
 	schema := &Schema{Entities: []*Entity{e}}
 
 	if err := schema.Freeze(); err == nil {
 		t.Fatal("Freeze() = nil, want an error: relation target is not an element of Schema.Entities")
+	}
+}
+
+// TestSchema_Freeze_RelationTargetSpanIsZero is the regression test for spec
+// §2.2's invariant: "every Relation that exists carries a valid TargetSpan."
+// A Relation is only ever meant to be appended once its `target:` has been
+// read *and* resolved -- see internal/parse/relation.go's
+// resolvePendingRelation, which returns before appending a Relation whenever
+// targetName is empty, and buildRelationField's own "target" case, which
+// only ever sets targetName from a real, non-empty string token. A Relation
+// with a zero TargetSpan is therefore not a value any correct resolver can
+// produce; Freeze is the last gate that can catch one anyway (a hand-built
+// *ir.Schema, or a resolver with a bug reintroduced later), matching the
+// same "invariants live in code, not in comments" standard already applied
+// to PK, Sort, Filter and Relation-membership above.
+func TestSchema_Freeze_RelationTargetSpanIsZero(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	targetID := &Field{Name: source.Bare("id"), PK: true}
+	target := &Entity{Name: "user", Fields: []*Field{targetID}, PK: targetID}
+	e := &Entity{
+		Name:   "widget",
+		Fields: []*Field{id},
+		PK:     id,
+		Relations: []Relation{{
+			Name:   "owner",
+			Target: target,
+			// TargetSpan deliberately left zero: every other invariant this
+			// Relation could violate (membership, PK bookkeeping on either
+			// entity) is satisfied, so a failure here can only be the
+			// TargetSpan check.
+		}},
+	}
+	schema := &Schema{Entities: []*Entity{e, target}}
+	sort.Slice(schema.Entities, func(i, j int) bool {
+		return schema.Entities[i].Name < schema.Entities[j].Name
+	})
+
+	if err := schema.Freeze(); err == nil {
+		t.Fatal("Freeze() = nil, want an error: relation has a zero TargetSpan (spec §2.2)")
 	}
 }

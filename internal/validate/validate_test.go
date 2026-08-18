@@ -199,3 +199,40 @@ func TestValidate_DeterministicAcrossRepeatedCalls(t *testing.T) {
 		}
 	}
 }
+
+// TestValidate_NilSchemaReturnsNoDiagnostics is the regression test for the
+// review-found panic: Validate used to dereference schema.Entities with no
+// nil guard, while ir.Schema.Lookup makes the explicit effort to be
+// nil-safe. A nil *ir.Schema is not a hypothetical caller error -- it is
+// exactly the value parse.Parse hands back alongside a non-empty
+// diag.Diagnostics whenever parsing itself fails (see
+// TestValidate_SchemaThatFailedToParseDoesNotPanic below for the reachable
+// path). Validate(nil, ...) must return nil, not panic.
+func TestValidate_NilSchemaReturnsNoDiagnostics(t *testing.T) {
+	diags := Validate(nil, "lapigo.yaml")
+	if diags != nil {
+		t.Errorf("Validate(nil, \"lapigo.yaml\") = %+v, want nil", diags)
+	}
+}
+
+// TestValidate_SchemaThatFailedToParseDoesNotPanic reproduces the exact
+// repro from the review: `entities: 3` is a schema file whose top-level
+// `entities:` value is an integer, not a mapping, so parse.Parse reports one
+// diagnostic ("`entities` must be a mapping, found an integer") and returns
+// a nil *ir.Schema. A caller that forwards that nil schema straight into
+// Validate -- an entirely plausible pipeline shape -- used to panic instead
+// of returning cleanly.
+func TestValidate_SchemaThatFailedToParseDoesNotPanic(t *testing.T) {
+	schema, parseDiags := parse.Parse(source.File{Name: "lapigo.yaml", Src: []byte("entities: 3\n")})
+	if schema != nil {
+		t.Fatalf("parse.Parse(\"entities: 3\") returned a non-nil schema: %+v", schema)
+	}
+	if len(parseDiags) != 1 {
+		t.Fatalf("parse.Parse(\"entities: 3\") diagnostics = %+v, want exactly 1", parseDiags)
+	}
+
+	diags := Validate(schema, "lapigo.yaml")
+	if diags != nil {
+		t.Errorf("Validate(nil, ...) = %+v, want nil", diags)
+	}
+}

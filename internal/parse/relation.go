@@ -73,16 +73,36 @@ func (r *resolver) buildRelationField(e *ir.Entity, name source.At[string], body
 	for _, entry := range entries {
 		switch entry.Key.Value {
 		case "target":
-			// targetSeen is set regardless of whether the value
-			// type-checks, for the same reason buildField sets typeSeen
-			// unconditionally: a bad value still means the key was
-			// present, and "has no target" would be a misleading second
-			// diagnostic alongside the wrong-type one.
-			targetSeen = true
 			s, ok := r.requireString(entry.Value, fieldContext(name.Value)+" `target`")
-			if ok {
-				rel.targetName = atOf(s.Value, s.GetToken())
+			if !ok {
+				// requireString already reported the wrong-type
+				// diagnostic. targetSeen is still set to true here, for
+				// the same reason buildField sets typeSeen
+				// unconditionally: a bad value still means the key was
+				// present, and "has no target" would be a misleading
+				// second diagnostic alongside the wrong-type one.
+				targetSeen = true
+				continue
 			}
+			if s.Value == "" {
+				// `target: ""` names no entity that could ever resolve --
+				// there is no entity named the empty string, and no
+				// "did you mean" suggestion is possible against an empty
+				// query. This used to fall through to the general case
+				// below with targetSeen forced true regardless of value,
+				// which suppressed the "has no target" diagnostic entirely:
+				// the FK field and column were still built, but zero
+				// Relation was ever appended and zero diagnostic explained
+				// why. Leaving targetSeen false here makes the check after
+				// this loop fire exactly as it would for a field that
+				// omitted `target:` altogether -- the fix is identical
+				// either way ("add a `target:` key naming the entity this
+				// belongsTo references"), so there is no need for a
+				// second, separate message.
+				continue
+			}
+			targetSeen = true
+			rel.targetName = atOf(s.Value, s.GetToken())
 		case "on_delete":
 			s, ok := r.requireString(entry.Value, fieldContext(name.Value)+" `on_delete`")
 			if !ok {
@@ -210,7 +230,15 @@ func (r *resolver) resolvePendingRelations(schema *ir.Schema, all []*pendingRela
 // catch (spec §2.2).
 func (r *resolver) resolvePendingRelation(schema *ir.Schema, rel *pendingRelation) {
 	if rel.targetName.Value == "" {
-		// buildRelationField already reported the missing `target:`.
+		// rel.targetName only ever gets a non-empty Value when
+		// buildRelationField found a well-typed, non-empty `target:`
+		// string (see its own "target" case). Every other way to reach
+		// this branch -- the key absent, `target: ""`, or `target:` holding
+		// a non-string value -- is a case buildRelationField already
+		// reported its own positioned diagnostic for (respectively "has no
+		// target" for the first two, and requireString's own
+		// wrong-type message for the third), so there is nothing left to
+		// resolve or report here.
 		return
 	}
 	target := schema.Lookup(rel.targetName.Value)

@@ -30,10 +30,21 @@ import (
 // identically alongside one from internal/parse (spec §4.4's "one
 // diagnostic type... sorted together, printed once").
 //
-// schema is assumed frozen (ir.Schema.Freeze returned nil for it) and file
-// non-empty; Validate does not call Freeze itself; a caller that skips it is
-// asking this package to trust pointers it has no way to verify.
+// schema may be nil: parse.Parse returns exactly that, alongside a non-empty
+// diag.Diagnostics, whenever parsing itself fails (e.g. a top-level
+// `entities:` that is not a mapping) -- a caller that forwards parse.Parse's
+// two return values straight into Validate must not have to special-case
+// that nil first. Validate reports nothing for a nil schema rather than
+// panicking (CLAUDE.md: no panic in library code); ir.Schema.Lookup makes
+// the same nil-safety effort for the same reason.
+//
+// A non-nil schema is assumed frozen (ir.Schema.Freeze returned nil for it)
+// and file non-empty; Validate does not call Freeze itself; a caller that
+// skips it is asking this package to trust pointers it has no way to verify.
 func Validate(schema *ir.Schema, file string) diag.Diagnostics {
+	if schema == nil {
+		return nil
+	}
 	var diags diag.Diagnostics
 	for _, e := range schema.Entities {
 		validateSort(e, file, &diags)

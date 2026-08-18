@@ -60,12 +60,20 @@ type pendingFilter struct {
 // gathering (but not resolving) its belongsTo relations, sort keys and
 // filters for the second pass. name is the entity's own name, already
 // reduced to a source.At[string] by the caller.
-func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entity, []*pendingRelation, []pendingSortKey, []pendingFilter) {
+//
+// sortWritten reports whether the mapping declared a `sort:` key at all,
+// distinct from the returned sortKeys being empty: a `sort:` key whose
+// sequence is present-but-empty (`sort: []`) is rejected by buildSortSpec
+// itself (spec §3.3) and never reaches here with sortWritten true and
+// sortKeys empty, but resolveSchema still needs to tell "omitted" from
+// "present" to know whether to synthesize the `[-<pk>]` default -- sortKeys
+// alone cannot answer that, since a nil slice looks the same either way.
+func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entity, []*pendingRelation, []pendingSortKey, bool, []pendingFilter) {
 	r.requireExportableName(name, "entity name")
 
 	m, ok := r.requireMapping(body, entityContext(name.Value))
 	if !ok {
-		return nil, nil, nil, nil
+		return nil, nil, nil, false, nil
 	}
 	entries := r.entries(m)
 	r.checkUnknownKeys(entries, entityContext(name.Value), entityKeys)
@@ -116,11 +124,11 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 			filters = r.buildPendingFilters(filtersNode, name.Value)
 		}
 		e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
-		return e, relations, sortKeys, filters
+		return e, relations, sortKeys, sortNode != nil, filters
 	}
 
 	e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
-	return e, nil, nil, nil
+	return e, nil, nil, false, nil
 }
 
 // buildFieldsAndRelations walks an entity's `fields:` mapping, building an

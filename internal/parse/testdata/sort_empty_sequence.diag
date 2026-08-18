@@ -1,0 +1,4 @@
+lapigo.yaml:6:11: entity "article" declares an empty `sort`
+   6 |     sort: []
+     |           ^
+   add at least one key ending in a unique field, e.g. `-id`, or delete `sort:` entirely to default to `-<primary key>` (spec §3.3)

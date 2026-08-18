@@ -82,6 +82,15 @@ func (e *Entity) freeze(s *Schema) error {
 		if !entityBelongsTo(rel.Target, s.Entities) {
 			return fmt.Errorf("ir: entity %q relation %q target is not an element of Schema.Entities", e.Name, rel.Name)
 		}
+		// spec §2.2: "every Relation that exists carries a valid
+		// TargetSpan." A Relation is only ever meant to be appended once
+		// its `target:` has been read *and* resolved to a real entity
+		// (internal/parse/relation.go's resolvePendingRelation returns
+		// before appending one otherwise) -- so a zero TargetSpan can only
+		// mean a Relation was built some other way, bypassing that rule.
+		if !rel.TargetSpan.IsValid() {
+			return fmt.Errorf("ir: entity %q relation %q has a zero TargetSpan (spec §2.2)", e.Name, rel.Name)
+		}
 	}
 	return nil
 }

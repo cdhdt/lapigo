@@ -1,0 +1,4 @@
+lapigo.yaml:5:7: belongsTo field "author" has no `target`
+   5 |       author: { type: belongsTo, target: "" }
+     |       ^^^^^^
+   add a `target:` key naming the entity this belongsTo references

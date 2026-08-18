@@ -98,7 +98,7 @@ type Entity struct {
     TableSpan source.Span        // zero when `table:` was defaulted
     Fields    []*Field           // declaration order
     PK        *Field
-    Sort      SortSpec
+    Sort      SortSpec           // never empty; [-PK] when `sort:` was omitted (§3.3)
     Filters   []Filter
     Relations []Relation
     Endpoints []Endpoint
@@ -132,7 +132,9 @@ type SortSpec struct {
 
 type SortKey struct {
     Field *Field                 // RESOLVED pointer, not a name
-    Span  source.Span            // the entry in `sort:`, sign included
+    Span  source.Span            // the entry in `sort:`, sign included; zero
+                                  // for the synthesized default (§3.3) — the
+                                  // parser wrote nothing to blame
 }
 
 type Filter struct {
@@ -305,6 +307,31 @@ fifteen lines, no dependency), not by a database default, so create returns the
 identifier without a round trip and the code stays portable.
 
 ### 3.3 Sort constraints, enforced by the validator
+
+**A sort spec is never empty by the time it reaches the validator.** CLAUDE.md
+decision 4 states this as a requirement on the whole system, not only on the
+validator: "the validator rejects sorts that lack [a unique tiebreaker] — this
+must not be possible to express." An entity that omits `sort:` altogether
+still needs one, and an entity that writes `sort: []` has asked for one and
+been refused, so both are settled by the *parser*, before rule 2 below ever
+runs:
+
+- **Omitting `sort:` synthesizes `sort: [-<pk>]`.** The primary key is unique
+  by construction (exactly one per entity, §3.1), so it is always a safe,
+  unambiguous default tiebreaker — rule 2 is satisfied automatically, with
+  `Entity.Sort.Desc` set to `true`. The synthesized `SortKey`'s `Span` is the
+  zero `source.Span`: nothing was written in the schema file for a diagnostic
+  to ever blame (`source.Bare`'s own contract).
+- **Writing `sort: []` explicitly is a parse-time error.** The author asked
+  for a keyset scan with no tiebreaker, spelled out, and is told so directly —
+  a parse diagnostic blaming the empty `[]` — rather than having it silently
+  default out from under them the way an *omitted* `sort:` does. Silently
+  defaulting an explicit empty list would treat "I want no keys" and "I didn't
+  think about it" as the same request, which they are not.
+
+This is why the numbered rules below can assume `Keys` is non-empty by
+construction: an *ir.Entity* with `len(Sort.Keys) == 0` cannot come out of a
+clean parse (zero diagnostics).
 
 1. **One direction for the whole spec.** `[-created_at, -id]` is valid;
    `[-created_at, id]` is a phase 1 error with a hint pointing at 1.5. A

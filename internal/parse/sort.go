@@ -25,6 +25,21 @@ func (r *resolver) buildSortSpec(node ast.Node, entityName string) (desc bool, k
 	if !ok {
 		return false, nil
 	}
+	if len(seq.Values) == 0 {
+		// `sort: []`, written explicitly, is a keyset scan with no
+		// tiebreaker -- the exact thing CLAUDE.md's decision 4 says "must
+		// not be possible to express". Omitting `sort:` altogether is
+		// different and not an error at all: resolveSchema synthesizes
+		// `[-<pk>]` for that case once the entity's PK has resolved (the PK
+		// is unique by construction, so it is always a safe default). But
+		// an author who wrote `sort: []` asked for something unsafe,
+		// spelled out, and must be told so directly rather than have it
+		// silently default out from under them.
+		r.addNode(seq,
+			"add at least one key ending in a unique field, e.g. `-id`, or delete `sort:` entirely to default to `-<primary key>` (spec §3.3)",
+			"entity %q declares an empty `sort`", entityName)
+		return false, nil
+	}
 
 	haveDirection := false
 	seen := make(map[string]bool, len(seq.Values))

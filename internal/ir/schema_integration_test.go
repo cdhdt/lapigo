@@ -48,7 +48,10 @@ func TestSchema_Compose(t *testing.T) {
 			{Field: status, Op: FilterOpEq},
 		},
 		Relations: []Relation{
-			{Name: "author", GoName: "Author", Target: user, Column: "author_id", GoType: user.PK.GoType(), OnDelete: "RESTRICT"},
+			{
+				Name: "author", GoName: "Author", Target: user, Column: "author_id", GoType: user.PK.GoType(), OnDelete: "RESTRICT",
+				TargetSpan: source.Span{Start: source.Pos{Line: 1, Column: 1}, End: source.Pos{Line: 1, Column: 5}},
+			},
 		},
 		Endpoints: []Endpoint{
 			{Kind: EndpointList, Path: "/articles"},
