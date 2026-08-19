@@ -1,0 +1,7 @@
+entities:
+  user_profile:
+    fields:
+      id: { type: uuid, pk: true }
+  userProfile:
+    fields:
+      id: { type: uuid, pk: true }

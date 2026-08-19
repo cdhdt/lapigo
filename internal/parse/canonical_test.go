@@ -86,6 +86,10 @@ func TestParse_CanonicalSchema(t *testing.T) {
 		},
 	}
 	user.PK = user.Fields[0]
+	// "user" writes no `sort:` at all -- canonical.yaml deliberately leaves
+	// it out to exercise the parser's own default (spec §3.3): omitting
+	// `sort:` synthesizes `[-<pk>]`, since the PK is unique by construction.
+	user.Sort = ir.SortSpec{Desc: true, Keys: []ir.SortKey{{Field: user.Fields[0]}}}
 
 	article.Relations = []ir.Relation{
 		{Name: "author", GoName: "Author", Target: user, Column: "author_id", GoType: "pgtype.UUID", Nullable: true, OnDelete: "RESTRICT"},

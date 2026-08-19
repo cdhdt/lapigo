@@ -26,7 +26,13 @@ func (s SortSpec) Direction() string {
 // a name — see spec §2.2: a template rendering a keyset comparison needs the
 // field's Go type, column and nullability directly, and a name would force a
 // lookup inside the template, which spec §5.1 forbids.
+//
+// Span covers the whole entry as written in `sort:`, sign included — e.g.
+// all eleven runes of `-created_at`, not just the ten of the field name it
+// resolves to. Only internal/parse's atOf saw that written form; a width
+// reconstructed later from Field.Name.Value would need to guess whether an
+// ascending key was written bare or with a `+` (spec §2.2).
 type SortKey struct {
 	Field *Field
-	Pos   source.Pos
+	Span  source.Span
 }

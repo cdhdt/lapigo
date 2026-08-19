@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id:    { type: uuid, pk: true }
+      price: { type: decimal, required: true, unique: true }
+    sort: [price]

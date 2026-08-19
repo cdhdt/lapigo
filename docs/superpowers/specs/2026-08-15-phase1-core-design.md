@@ -92,11 +92,13 @@ type Schema struct {
 
 type Entity struct {
     Name      string             // as written
+    NameSpan  source.Span        // where the name was written
     GoName    string             // validated Go identifier
     Table     string
+    TableSpan source.Span        // zero when `table:` was defaulted
     Fields    []*Field           // declaration order
     PK        *Field
-    Sort      SortSpec
+    Sort      SortSpec           // never empty; [-PK] when `sort:` was omitted (§3.3)
     Filters   []Filter
     Relations []Relation
     Endpoints []Endpoint
@@ -130,18 +132,23 @@ type SortSpec struct {
 
 type SortKey struct {
     Field *Field                 // RESOLVED pointer, not a name
-    Pos   Pos
+    Span  source.Span            // the entry in `sort:`, sign included; zero
+                                  // for the synthesized default (§3.3) — the
+                                  // parser wrote nothing to blame
 }
 
 type Filter struct {
     Field *Field                 // resolved
     Op    FilterOp               // Eq only in phase 1
+    Span  source.Span            // the entry in `filters:`
 }
 
 type Relation struct {
     Name       string            // "author"
+    NameSpan   source.Span
     GoName     string            // "Author"
     Target     *Entity           // resolved
+    TargetSpan source.Span       // the `target:` value; always valid (see below)
     Column     string            // "author_id"
     GoType     string            // from the target's PK
     Nullable   bool
@@ -153,6 +160,20 @@ type Endpoint struct {
     Path string
 }
 ```
+
+**Every `Relation` that exists carries a valid `TargetSpan`.** A relation is
+appended only once its `target:` has been read *and* resolved to a real entity:
+an omitted, empty, or unresolvable target reports a diagnostic and returns
+before the append, so no `Relation` is built at all. There is therefore no such
+thing as a relation whose target was never written, and a diagnostic blaming a
+*missing* `target:` cannot be expressed through this type — it must be reported
+by the parser, at the relation's own name, before any `Relation` exists.
+
+This is an invariant, so `Schema.Freeze` must check it rather than this
+paragraph asserting it. An earlier revision of this spec claimed the opposite —
+that `TargetSpan` was the zero `Span` when `target:` was omitted — which an
+adversarial review disproved by enumerating all four target forms: only the
+resolved one yields a `Relation`, and its span is always valid.
 
 **Sort keys and filters hold resolved `*Field` pointers, not names.** A template
 rendering a comparison needs the field's Go type, column and nullability; a
@@ -173,6 +194,16 @@ an element of that entity's own `Fields`, every `SortKey.Field` and
 `Filter.Field` belongs to its entity, every `Relation.Target` is an element of
 `Schema.Entities` — and there is a test that resolves, then appends and sorts,
 and checks identity survives. A documented "do not append" rule is not a fix.
+
+**Every IR node a diagnostic can blame carries its own span.** An earlier
+revision gave `SortKey` a start position with no end, and gave `Entity`,
+`Filter` and `Relation` nothing at all. The consequence showed up as soon as the
+validator was written: a diagnostic about a filter pointed at the *filtered
+field's declaration* instead of the offending `filters:` entry, sending the
+reader to the wrong line — the precise failure the whole positions effort exists
+to prevent. Reconstructing a span downstream is guesswork, because only the
+parser saw the written form, and a quoted or sign-prefixed token is wider than
+the value it carries.
 
 **`GoType` and `PgType` are computed methods, never stored fields.** Revision 1
 stored them as strings *alongside* the `FieldType` they derive from, which made
@@ -276,6 +307,31 @@ fifteen lines, no dependency), not by a database default, so create returns the
 identifier without a round trip and the code stays portable.
 
 ### 3.3 Sort constraints, enforced by the validator
+
+**A sort spec is never empty by the time it reaches the validator.** CLAUDE.md
+decision 4 states this as a requirement on the whole system, not only on the
+validator: "the validator rejects sorts that lack [a unique tiebreaker] — this
+must not be possible to express." An entity that omits `sort:` altogether
+still needs one, and an entity that writes `sort: []` has asked for one and
+been refused, so both are settled by the *parser*, before rule 2 below ever
+runs:
+
+- **Omitting `sort:` synthesizes `sort: [-<pk>]`.** The primary key is unique
+  by construction (exactly one per entity, §3.1), so it is always a safe,
+  unambiguous default tiebreaker — rule 2 is satisfied automatically, with
+  `Entity.Sort.Desc` set to `true`. The synthesized `SortKey`'s `Span` is the
+  zero `source.Span`: nothing was written in the schema file for a diagnostic
+  to ever blame (`source.Bare`'s own contract).
+- **Writing `sort: []` explicitly is a parse-time error.** The author asked
+  for a keyset scan with no tiebreaker, spelled out, and is told so directly —
+  a parse diagnostic blaming the empty `[]` — rather than having it silently
+  default out from under them the way an *omitted* `sort:` does. Silently
+  defaulting an explicit empty list would treat "I want no keys" and "I didn't
+  think about it" as the same request, which they are not.
+
+This is why the numbered rules below can assume `Keys` is non-empty by
+construction: an *ir.Entity* with `len(Sort.Keys) == 0` cannot come out of a
+clean parse (zero diagnostics).
 
 1. **One direction for the whole spec.** `[-created_at, -id]` is valid;
    `[-created_at, id]` is a phase 1 error with a hint pointing at 1.5. A

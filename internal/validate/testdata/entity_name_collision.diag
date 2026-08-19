@@ -1,0 +1,4 @@
+lapigo.yaml:2:3: entity "userProfile" and entity "user_profile" both produce Go identifier "UserProfile"
+   2 |   user_profile:
+     |   ^^^^^^^^^^^^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)

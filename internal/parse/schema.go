@@ -76,12 +76,32 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 
 	builds := make([]entityBuild, 0, len(entityEntries))
 	for _, e := range entityEntries {
-		entity, relations, sortKeys, filters := r.buildEntity(e.Key, e.Value)
+		entity, relations, sortKeys, sortWritten, filters := r.buildEntity(e.Key, e.Value)
 		if entity == nil {
 			continue
 		}
 		r.resolvePK(entity, e.Key)
 		r.resolveVersion(entity)
+		if !sortWritten && entity.PK != nil {
+			// CLAUDE.md decision 4: "the validator rejects sorts that lack
+			// [a unique tiebreaker] -- this must not be possible to
+			// express." An entity that never writes `sort:` at all used to
+			// resolve with e.Sort.Keys empty and zero diagnostics, which
+			// was exactly that hole. The PK is unique by construction (spec
+			// §3.1: exactly one per entity), so `[-<pk>]` is always a safe,
+			// unambiguous default -- synthesized here as an ordinary
+			// pendingSortKey, resolved by the same second-pass loop below
+			// as any written key, so it needs no special-casing there.
+			// source.Bare gives it the zero Span its own doc comment
+			// promises for a value lapigo synthesized rather than a human
+			// wrote (nothing was written here for a diagnostic to blame).
+			//
+			// Skipped when entity.PK is nil: resolvePK has already reported
+			// its own diagnostic for that (no PK, or more than one), and
+			// there is no field to default the tiebreaker to.
+			entity.Sort.Desc = true
+			sortKeys = append(sortKeys, pendingSortKey{name: source.Bare(entity.PK.Name.Value)})
+		}
 		builds = append(builds, entityBuild{entity: entity, nameAt: e.Key, relations: relations, sortKeys: sortKeys, filters: filters})
 	}
 
@@ -117,7 +137,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 				r.addAt(sk.name, "", "sort key %q is not a field of entity %q", sk.name.Value, b.entity.Name)
 				continue
 			}
-			b.entity.Sort.Keys = append(b.entity.Sort.Keys, ir.SortKey{Field: field, Pos: sk.name.Pos})
+			b.entity.Sort.Keys = append(b.entity.Sort.Keys, ir.SortKey{Field: field, Span: sk.name.Span()})
 		}
 		for _, filt := range b.filters {
 			field := b.entity.Lookup(filt.name.Value)
@@ -125,7 +145,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 				r.addAt(filt.name, "", "filter %q is not a field of entity %q", filt.name.Value, b.entity.Name)
 				continue
 			}
-			b.entity.Filters = append(b.entity.Filters, ir.Filter{Field: field, Op: ir.FilterOpEq})
+			b.entity.Filters = append(b.entity.Filters, ir.Filter{Field: field, Op: ir.FilterOpEq, Span: filt.name.Span()})
 		}
 	}
 

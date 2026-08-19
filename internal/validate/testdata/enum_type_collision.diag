@@ -1,0 +1,4 @@
+lapigo.yaml:6:3: enum type "article.status" and entity "article_status" both produce Go identifier "ArticleStatus"
+   6 |   article_status:
+     |   ^^^^^^^^^^^^^^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)

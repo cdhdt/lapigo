@@ -1,0 +1,9 @@
+entities:
+  article:
+    fields:
+      id:     { type: uuid, pk: true }
+      Author: { type: string }
+      author: { type: belongsTo, target: user }
+  user:
+    fields:
+      id: { type: uuid, pk: true }

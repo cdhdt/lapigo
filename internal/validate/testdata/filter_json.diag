@@ -1,0 +1,4 @@
+lapigo.yaml:6:15: field "data" has type "json" and may not be used as a filter
+   6 |     filters: [data]
+     |               ^^^^
+   json fields are neither sortable nor filterable (spec §3.4); remove `data` from `filters`

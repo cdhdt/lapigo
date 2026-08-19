@@ -1,0 +1,4 @@
+lapigo.yaml:6:12: warning: sort key "slug" may change after the row is created
+   6 |     sort: [slug]
+     |            ^^^^
+   a row whose sort value changes can move relative to a live cursor; this is inherent to keyset pagination and does not block generation. Mark `slug` `immutable: true` if its value must never change once set (spec §3.3 rule 5)

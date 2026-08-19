@@ -22,6 +22,7 @@ func stripPositions(s *ir.Schema) {
 		return
 	}
 	for _, e := range s.Entities {
+		e.NameSpan, e.TableSpan = source.Span{}, source.Span{}
 		for _, f := range e.Fields {
 			f.Name.Pos, f.Name.End = source.Pos{}, source.Pos{}
 			for i := range f.EnumValues {
@@ -29,7 +30,13 @@ func stripPositions(s *ir.Schema) {
 			}
 		}
 		for i := range e.Sort.Keys {
-			e.Sort.Keys[i].Pos = source.Pos{}
+			e.Sort.Keys[i].Span = source.Span{}
+		}
+		for i := range e.Filters {
+			e.Filters[i].Span = source.Span{}
+		}
+		for i := range e.Relations {
+			e.Relations[i].NameSpan, e.Relations[i].TargetSpan = source.Span{}, source.Span{}
 		}
 	}
 }

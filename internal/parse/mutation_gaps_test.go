@@ -74,11 +74,15 @@ func TestBuildRelationField_OnDeleteDefaultsToRestrict(t *testing.T) {
 	}
 }
 
-// TestBuildSortSpec_SortKeyPosIsExact closes the mutation gap "SortKey.Pos
+// TestBuildSortSpec_SortKeySpanIsExact closes the mutation gap "SortKey.Span
 // is never asserted: testdata_test.go:31 zeroes it before every
 // comparison. It is exactly what spec §4.1's headline diagnostic needs."
-// stripPositions is deliberately not used here.
-func TestBuildSortSpec_SortKeyPosIsExact(t *testing.T) {
+// stripPositions is deliberately not used here. It also pins the End half of
+// the span, which the pre-IR-spans heuristic in internal/validate could only
+// reconstruct for a descending spec by assuming every ascending key was
+// written unsigned -- an assumption this test's own "-created_at" avoids
+// needing, since both keys here are written with an explicit sign.
+func TestBuildSortSpec_SortKeySpanIsExact(t *testing.T) {
 	src := "entities:\n  article:\n    fields:\n      id: { type: uuid, pk: true }\n" +
 		"      created_at: { type: timestamp, required: true }\n" +
 		"    sort: [-created_at, -id]\n"
@@ -91,15 +95,79 @@ func TestBuildSortSpec_SortKeyPosIsExact(t *testing.T) {
 	}
 	// Line 6 is "    sort: [-created_at, -id]"; the key "-created_at"
 	// starts right after "[", the "-" sign included (atOf spans the whole
-	// written form, per TestAtOf_UsesExplicitValueButTokenSpan), and
-	// "-id" starts after ", ".
-	if keys[0].Pos != (source.Pos{Line: 6, Column: 12}) {
-		t.Errorf("Sort.Keys[0].Pos = %+v, want {6 12}", keys[0].Pos)
+	// written form, per TestAtOf_UsesExplicitValueButTokenSpan), and runs
+	// eleven runes to just past the "t" of "created_at". "-id" starts after
+	// ", " and runs three runes to just past the "d".
+	wantFirst := source.Span{Start: source.Pos{Line: 6, Column: 12}, End: source.Pos{Line: 6, Column: 23}}
+	wantSecond := source.Span{Start: source.Pos{Line: 6, Column: 25}, End: source.Pos{Line: 6, Column: 28}}
+	if keys[0].Span != wantFirst {
+		t.Errorf("Sort.Keys[0].Span = %+v, want %+v", keys[0].Span, wantFirst)
 	}
-	if keys[1].Pos != (source.Pos{Line: 6, Column: 25}) {
-		t.Errorf("Sort.Keys[1].Pos = %+v, want {6 25}", keys[1].Pos)
+	if keys[1].Span != wantSecond {
+		t.Errorf("Sort.Keys[1].Span = %+v, want %+v", keys[1].Span, wantSecond)
 	}
 	if keys[0].Field != schema.Entities[0].Lookup("created_at") {
 		t.Errorf("Sort.Keys[0].Field is not the created_at field, by identity")
+	}
+}
+
+// TestBuildSortSpec_OmittedSortDefaultsToDescendingPK is the regression test
+// for the review-found defect: with no `sort:` key at all, an entity used to
+// resolve with zero sort keys and zero diagnostics -- CLAUDE.md's decision 4
+// says a sort with no tiebreaker "must not be possible to express", and yet
+// it was. The design decided in response (not dictated by any earlier spec
+// revision): omitting `sort:` synthesizes `sort: [-<pk>]` rather than
+// rejecting the omission outright, since the PK is unique by construction and
+// so is always a safe, unambiguous default tiebreaker. The synthesized key's
+// Span is the zero source.Span (source.Bare's own contract: nothing was
+// written for a diagnostic to ever blame).
+func TestBuildSortSpec_OmittedSortDefaultsToDescendingPK(t *testing.T) {
+	schema := parseOK(t, "entities:\n  article:\n    fields:\n"+
+		"      id: { type: uuid, pk: true }\n"+
+		"      title: { type: string, required: true }\n"+
+		"    endpoints: [list]\n")
+
+	article := schema.Entities[0]
+	if !article.Sort.Desc {
+		t.Error("article.Sort.Desc = false, want true for the synthesized default")
+	}
+	if len(article.Sort.Keys) != 1 {
+		t.Fatalf("len(article.Sort.Keys) = %d, want 1", len(article.Sort.Keys))
+	}
+	got := article.Sort.Keys[0]
+	if got.Field != article.PK {
+		t.Error("Sort.Keys[0].Field is not article.PK, by identity")
+	}
+	if got.Span != (source.Span{}) {
+		t.Errorf("Sort.Keys[0].Span = %+v, want the zero Span: nothing was written for `sort:`", got.Span)
+	}
+}
+
+// TestBuildSortSpec_EntityWithSortOmittedAndOnlyOneFieldStillHasATiebreaker
+// reproduces the review's exact counter-example byte for byte: an "article"
+// entity with only "id" (pk) and "title" fields, `endpoints: [list]`, and no
+// `sort:` at all. Before the fix this parsed with zero diagnostics and zero
+// sort keys -- an unsafe, tiebreaker-less list endpoint the schema format was
+// never supposed to be able to express.
+func TestBuildSortSpec_EntityWithSortOmittedAndOnlyOneFieldStillHasATiebreaker(t *testing.T) {
+	schema, diags := Parse(source.File{Name: "lapigo.yaml", Src: []byte(
+		"entities:\n  article:\n    fields:\n" +
+			"      id: { type: uuid, pk: true }\n" +
+			"      title: { type: string, required: true }\n" +
+			"    endpoints: [list]\n")})
+	if len(diags) != 0 {
+		t.Fatalf("diags = %+v, want none", diags)
+	}
+	if err := schema.Freeze(); err != nil {
+		t.Fatalf("Freeze() = %v, want nil", err)
+	}
+
+	article := schema.Entities[0]
+	if len(article.Sort.Keys) == 0 {
+		t.Fatal("article.Sort.Keys is empty: the list endpoint has no keyset tiebreaker")
+	}
+	last := article.Sort.Keys[len(article.Sort.Keys)-1]
+	if !last.Field.PK && !last.Field.Unique {
+		t.Errorf("last sort key %q is neither PK nor unique: not a valid keyset tiebreaker", last.Field.Name.Value)
 	}
 }

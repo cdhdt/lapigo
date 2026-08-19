@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      title: { type: string, required: true }
+    sort: []

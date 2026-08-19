@@ -41,6 +41,28 @@ func (p Pos) IsZero() bool { return p.Line == 0 && p.Column == 0 }
 // guard on IsValid, not IsZero.
 func (p Pos) IsValid() bool { return p.Line >= 1 && p.Column >= 1 }
 
+// Span is a half-open range in a schema source file: End is exclusive, so a
+// single-character span has End.Column == Start.Column+1.
+//
+// Span exists for the IR nodes that have a place in the source but no value of
+// their own to pair with it — an entity's name, a sort key, a filter entry, a
+// relation. Those carried no position at all in an earlier revision, so a
+// diagnostic about a filter pointed at the filtered field's declaration rather
+// than at the offending `filters:` entry, sending the reader to the wrong line.
+// Reconstructing a span downstream is guesswork: only the parser saw the
+// written form, and a quoted or signed token is wider than the value it
+// carries.
+type Span struct {
+	Start Pos
+	End   Pos
+}
+
+// IsValid reports whether s addresses real characters.
+func (s Span) IsValid() bool { return s.Start.IsValid() }
+
+// NewSpan builds a span from its two ends.
+func NewSpan(start, end Pos) Span { return Span{Start: start, End: end} }
+
 // At pairs a value with the place in the schema where it was written.
 //
 // It is applied selectively, to the leaves that validation actually blames:
@@ -65,6 +87,10 @@ type At[T any] struct {
 
 // NewAt pairs a value with the span it occupied in the source.
 func NewAt[T any](v T, start, end Pos) At[T] { return At[T]{Value: v, Pos: start, End: end} }
+
+// Span returns a's extent, so a caller holding either an At or a Span can be
+// written the same way.
+func (a At[T]) Span() Span { return Span{Start: a.Pos, End: a.End} }
 
 // Bare pairs a value with no position, for values lapigo synthesised itself
 // rather than read from a schema — a defaulted table name, an implied endpoint.

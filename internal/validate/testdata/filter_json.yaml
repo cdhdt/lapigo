@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id:   { type: uuid, pk: true }
+      data: { type: json }
+    filters: [data]

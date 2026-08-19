@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id:   { type: uuid, pk: true }
+      slug: { type: string, required: true, unique: true }
+    sort: [slug]

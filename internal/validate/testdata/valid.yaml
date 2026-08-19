@@ -1,0 +1,19 @@
+entities:
+  article:
+    table: articles
+    fields:
+      id:         { type: uuid, pk: true }
+      title:      { type: string, required: true, max: 200 }
+      body:       { type: text }
+      status:     { type: enum, values: [draft, published], required: true }
+      slug:       { type: string, unique: true, readonly: true }
+      author:     { type: belongsTo, target: user, on_delete: restrict }
+      created_at: { type: timestamp, required: true, default: now, immutable: true }
+      version:    { type: int, version: true }
+    sort: [-created_at, -id]
+    filters: [status, author]
+    endpoints: [list, get, create, update, delete]
+  user:
+    fields:
+      id:    { type: uuid, pk: true }
+      email: { type: string, required: true, unique: true }

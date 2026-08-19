@@ -1,0 +1,9 @@
+lapigo.yaml:6:12: sort key "meta" has type "json", which may not be a sort key
+   6 |     sort: [meta]
+     |            ^^^^
+   json fields are neither sortable nor filterable (spec §3.4); remove `meta` from `sort`
+
+lapigo.yaml:6:12: warning: sort key "meta" may change after the row is created
+   6 |     sort: [meta]
+     |            ^^^^
+   a row whose sort value changes can move relative to a live cursor; this is inherent to keyset pagination and does not block generation. Mark `meta` `immutable: true` if its value must never change once set (spec §3.3 rule 5)
