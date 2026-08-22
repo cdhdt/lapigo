@@ -1,14 +1,20 @@
 # Contributing to lapigo
 
-Thanks for considering it. This project is in its design phase, so the most
-valuable contributions right now are arguments, not patches.
+Thanks for considering it. Phase 1 is in build: the parser, the intermediate
+representation and the validator are merged, and the generator is being written
+against an accepted specification. Patches are welcome.
 
 ## Before you write code
 
-Read [`CLAUDE.md`](CLAUDE.md). It documents the architecture decisions and the
-reasoning behind them. Several of those decisions look restrictive on purpose —
-cursor-only pagination, no user-overridable templates, no dependencies in
-generated code. They were settled deliberately.
+Read [`CLAUDE.md`](CLAUDE.md) for the architecture decisions and the reasoning
+behind them, and then read the specification the current work implements:
+[`docs/superpowers/specs/2026-08-15-phase1-core-design.md`](docs/superpowers/specs/2026-08-15-phase1-core-design.md).
+It is detailed on purpose — a contract, not a sketch — and its §10 says which
+build order step is next and why the order cannot be reshuffled.
+
+Several of the architecture decisions look restrictive on purpose — cursor-only
+pagination, no user-overridable templates, no dependencies in generated code.
+They were settled deliberately.
 
 **If you disagree with one, open an issue and make the case.** A pull request
 that quietly reverses a documented decision will be closed, and that is a waste
