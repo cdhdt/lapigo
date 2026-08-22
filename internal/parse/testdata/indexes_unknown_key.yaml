@@ -1,0 +1,12 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      status: { type: enum, values: [draft, published], required: true }
+      author: { type: belongsTo, target: user }
+    filters: [status, author]
+    indexes:
+      - filter: [status, author]
+  user:
+    fields:
+      id: { type: uuid, pk: true }

@@ -49,6 +49,8 @@ func Validate(schema *ir.Schema, file string) diag.Diagnostics {
 	for _, e := range schema.Entities {
 		validateSort(e, file, &diags)
 		validateFilters(e, file, &diags)
+		validateIndexes(e, file, &diags)
+		validateRelations(e, file, &diags)
 		validateEntityStructNames(e, file, &diags)
 	}
 	validatePackageNames(schema, file, &diags)

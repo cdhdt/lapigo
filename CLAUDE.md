@@ -31,7 +31,7 @@ from their toolchain without rewriting their application.
 
 ## Project status
 
-**Phase 1, in build. Steps 1-3 of the build order are merged.**
+**Phase 1, in build. Steps 1-4 of the build order are merged.**
 
 The architecture is settled (see below) and the phase 1 specification is
 **accepted**: `docs/superpowers/specs/2026-08-15-phase1-core-design.md`,
@@ -44,21 +44,24 @@ from revision 1 — so a change that reopens one of those needs an issue.
 | 1. `Pos`, `At[T]`, `Diagnostic`, rendering, tab rejection | done — `bba8255` |
 | 2. Parser: YAML → AST → IR with positions | done — `37893df` |
 | 3. Validator: §3.1, §3.3, §3.4, §5.6 | done — `a87b00d` |
-| 4. DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | **next** |
-| 5. Template engine, formatting, determinism, staging, lock | not started |
+| 4. DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | done |
+| 5. Template engine, formatting, determinism, staging, lock | **next** |
 | 6. Hooks interfaces and no-op implementations | not started |
 | 7. Model and input types, store, cursor encoding, keyset predicate | not started |
 | 8. Handlers, error envelope, router, resource bounds | not started |
 | 9. `lapigo new`, `lapigo gen` | not started |
 
-What exists under `internal/`: `source`, `diag`, `ir`, `parse`, `validate`.
-`internal/gen` does not exist yet, and neither does `cmd/lapigo` — which is why
-`make check` runs `build-all` and not `build`.
+What exists under `internal/`: `source`, `diag`, `ir`, `parse`, `validate`,
+`ddl`. `internal/gen` does not exist yet, and neither does `cmd/lapigo` — which
+is why `make check` runs `build-all` and not `build`.
 
 The order in §10 is a real dependency order, not a preference: hooks precede
-the store because the store invokes them inside its transaction, and the
-handlers depend on the store's types and cursor encoding. Only step 4 is
-independent of 5-8. Do not start a step whose predecessor is not merged.
+the store because the store invokes them inside their transaction, and the
+handlers depend on the store's types and cursor encoding. Step 5 carries a
+debt recorded in spec §10: the first commit of step 5 must derive
+`internal/validate`'s `reservedMethodNames` from the templates it generates,
+not from this document's text. Do not start a step whose predecessor is not
+merged.
 
 ---
 

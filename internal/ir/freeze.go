@@ -78,6 +78,13 @@ func (e *Entity) freeze(s *Schema) error {
 			return fmt.Errorf("ir: entity %q has a filter field that is not an element of its own Fields", e.Name)
 		}
 	}
+	for _, idx := range e.Indexes {
+		for _, col := range idx.Columns {
+			if !fieldBelongsTo(col.Field, e.Fields) {
+				return fmt.Errorf("ir: entity %q has a declared index column that is not an element of its own Fields", e.Name)
+			}
+		}
+	}
 	for _, rel := range e.Relations {
 		if !entityBelongsTo(rel.Target, s.Entities) {
 			return fmt.Errorf("ir: entity %q relation %q target is not an element of Schema.Entities", e.Name, rel.Name)

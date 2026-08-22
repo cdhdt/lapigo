@@ -28,7 +28,7 @@ Everything else is scoped to serve that path and nothing more.
   spec per entity, a filter whitelist, endpoint selection.
 - Parse → IR → validate, with positioned diagnostics.
 - **DDL generation**: `CREATE TABLE`, constraints, and the indexes the declared
-  sorts and filters require.
+  sorts and filters require, plus any declared composite indexes (§3.5).
 - Templates → `internal/gen/`, formatted, deterministic, atomically written.
 - Generated CRUD: `list`, `get`, `create`, `update`, `delete`.
 - Cursor pagination, **uniform-direction sorts only** (see §7.1).
@@ -361,6 +361,43 @@ This is what makes injection through filter and sort parameters structurally
 impossible rather than a matter of escaping.
 
 Phase 1 supports equality only.
+
+### 3.5 Entity options
+
+The keys an entity may declare beside `fields:`, `sort:`, `filters:` and
+`endpoints:`:
+
+| Option | Meaning |
+|---|---|
+| `table` | The table name. Optional; default is the entity name + `s` (§9.1). Must satisfy the identifier grammar and Postgres's 63-byte identifier limit. |
+| `indexes` | Declared composite indexes (below). Optional. |
+
+`indexes:` is the escape hatch §7.2 promises for a filter combination the
+derived *N+1* index set does not cover. Each entry is a mapping with exactly
+one key, `filters`, naming at least two filters of the same entity:
+
+```yaml
+filters: [status, author]
+indexes:
+  - filters: [status, author]
+```
+
+The declared filter columns, in the order written, lead the emitted index;
+the entity's sort keys follow (§7.2). The validator enforces:
+
+- every named column must be a declared filter of the same entity — an index
+  exists to serve a filter combination, and a column the API cannot filter on
+  serves no combination;
+- at least two columns — the derived set already indexes every single
+  declared filter, so a one-column entry would emit the same index twice;
+- no column twice within one entry, and no two entries with the same ordered
+  column list — same index, twice the write cost.
+
+The reasoning that removed revision 1's field-level `index: true` does not
+apply here: that option was a user-asserted claim about a database lapigo
+neither created nor inspected, while `indexes:` is an instruction to the DDL
+emitter lapigo itself runs — phase 1 owns the `CREATE TABLE` and the `CREATE
+INDEX`, so nothing is asserted about a database that does not yet exist.
 
 ---
 
@@ -836,6 +873,14 @@ indexes:
   - filters: [status, author]
 ```
 
+The key is defined in §3.5. The emitted set is deduplicated by column list —
+a filter column that is also a sort key collapses into the unfiltered sort's
+index, since the duplicated column is constant under the equality seek and
+contributes no pathkey — and a single-column list equal to the primary key's
+emits nothing, because the primary key constraint already created exactly
+that index and a second copy would double every insert's index writes for no
+read benefit.
+
 ### 7.3 Statements
 
 One prepared statement per filter combination actually used. No
@@ -929,6 +974,12 @@ Test-driven. The failing test comes first.
   thoroughly as success cases. **Diagnostic text is part of the public contract
   and tests assert on it**, including caret placement for a non-ASCII
   identifier, and the tab-rejection diagnostic.
+- **DDL emitter** — golden `.sql` files under `internal/ddl/testdata/`,
+  asserted byte for byte with the same `-update` convention; emitted SQL is
+  output users run against a real database, so a regeneration is reviewed as
+  a diff, never routine. Determinism (twenty runs, byte equality) and
+  Postgres's 63-byte identifier limit are asserted on every fixture's real
+  output.
 - **Templates** — golden files under `testdata/<case>/` with the `-update` flag
   convention, so regeneration is reviewed as a diff.
 - **Generated code compiles.** Golden output is written to a temp module and
@@ -975,15 +1026,14 @@ because it is believed.
 4. **`max` on `string`** emits both `varchar(n)` and a Go validation check. The
    two can disagree if the migration is edited by hand; phase 2's diffing is
    what resolves that properly.
-5. **The entity-level `indexes:` key is used in §7.2 and defined nowhere.**
-   §7.2 offers it as the escape hatch for a filter combination the derived
-   *N+1* set does not cover, but §3's schema example does not show it, §3.1 is
-   field options only, and there is no entity-options table for it to live in.
-   `internal/parse` does not read it. **Step 4 must settle this before it emits
-   an index set:** either specify the key in §3 and parse it, or drop it from
-   §7.2 and say that a user needing a specific combination declares the filter
-   order instead. Shipping the DDL emitter while §7.2 promises a key the parser
-   ignores is the worse outcome.
+5. **Resolved 2026-08-22 — the entity-level `indexes:` key is specified in
+   §3.5.** Step 4 had to settle this before emitting an index set, and
+   specified it rather than dropping it from §7.2: the escape hatch is what
+   keeps the *N+1* bound honest for schemas with a hot combined-filter query,
+   and the reasoning that removed revision 1's `index: true` — a user-asserted
+   claim about a database lapigo neither created nor inspected — does not
+   apply now that DDL generation is phase 1: lapigo creates exactly what the
+   key declares.
 
 ---
 
@@ -994,7 +1044,7 @@ because it is believed.
 | 1 | `Pos`, `At[T]`, `Diagnostic`, rendering, tab rejection | `internal/source`, `internal/diag` | done — `bba8255` |
 | 2 | Parser: YAML → AST → IR with positions | `internal/ir`, `internal/parse` | done — `37893df` |
 | 3 | Validator: §3.1, §3.3, §3.4, §5.6 | `internal/validate` | done — `a87b00d` |
-| 4 | DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | not decided | **next** |
+| 4 | DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | `internal/ddl` | done |
 | 5 | Template engine, formatting, determinism, staging, lock | `internal/gen` | not started |
 | 6 | Hooks interfaces and no-op implementations | `internal/gen` | not started |
 | 7 | Model and input types (§6.5), store, cursor encoding, keyset predicate | `internal/gen` | not started |
@@ -1070,3 +1120,8 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-08-19 | §2.2 | `Entity` gained `NameSpan` and `TableSpan`, `Filter` gained `Span`, `Relation` gained `NameSpan` and `TargetSpan`, and `SortKey.Pos` became `SortKey.Span` | Building the validator showed the IR could not blame the right token: a diagnostic about a filter pointed at the filtered field's declaration rather than at the offending `filters:` entry. Only the parser sees the written form, so only it can record an exact width. |
 | 2026-08-19 | §2.2 | Every `Relation` that exists carries a valid `TargetSpan` — stated as an invariant `Schema.Freeze` checks, not as prose | A first attempt claimed the opposite (a zero `TargetSpan` when `target:` was omitted). An adversarial review disproved it by enumerating all four target forms: no `Relation` is ever appended whose target went unwritten. |
 | 2026-08-19 | §2.2, §3.3 | Omitting `sort:` synthesizes `[-<pk>]`; writing `sort: []` is a parse error | CLAUDE.md decision 4 requires that a sort with no unique tiebreaker not be expressible. Omitting `sort:` produced an entity with zero sort keys and zero diagnostics, so it was. |
+| 2026-08-22 | §3.5 (new), §9.5 | Entity options specified: `table:` formalized, `indexes:` defined with its validator rules; open question 5 resolved by specifying rather than dropping | Building the DDL emitter (step 4) had to settle §7.2's promised-but-undefined escape hatch before emitting an index set. The reasoning that removed `index: true` does not apply now that DDL is phase 1: lapigo creates what the key declares. |
+| 2026-08-22 | §7.2 | The emitted index set deduplicates by column list, and a single-column list equal to the primary key's emits nothing | Writing the emitter surfaced both as duplicate-index emissions: a filter column that is also a sort key adds a constant column, and the pkey constraint already indexes its own column. |
+| 2026-08-22 | step 4 | Foreign keys emit as `ALTER TABLE` after every `CREATE TABLE`; every table and column identifier is emitted double-quoted (the pg_dump convention); derived constraint and index names follow Postgres conventions (`_pkey`, `_key`, `_check`, `_fkey`, `_idx`), kept within 63 bytes by deterministic truncation plus a hash suffix; `default: now` emits `DEFAULT CURRENT_TIMESTAMP`, literals emit as single-quoted SQL strings, `default: uuid` emits nothing | A relation cycle (nullable mutual FKs) is representable and resolves — only PK-belongsTo cycles are parse errors — so no CREATE TABLE order can carry inline REFERENCES. The parser's identifier grammar accepts Postgres reserved words (`order`, `select`, `user` are legal field names), and an unquoted reserved word in a table or column position is a syntax error at apply time — quoting everything makes the bug unrepresentable rather than maintained against a keyword list that drifts with Postgres versions. Postgres silently truncates identifiers past 63 bytes, colliding prefix-sharing names. The DEFAULT rules pin what §3.2 left implicit; uuid stays client-side per its own rationale. |
+| 2026-08-22 | §3.1 (parse rules) | Identifiers are rejected above Postgres's 63-byte limit; enum values must be non-empty and free of control characters | Postgres would silently truncate a longer identifier, leaving generated code and database disagreeing; a control character in an enum value cannot be emitted into the migration's CHECK literal (Postgres rejects NUL outright). |
+| 2026-08-22 | §3.1 (validation) | `on_delete: set_null` is rejected on a relation that is not nullable | The DDL emits the clause as asked; NOT NULL plus ON DELETE SET NULL applies cleanly and then fails on every delete of a referenced row — a runtime 500 generated from a schema that validated clean. |

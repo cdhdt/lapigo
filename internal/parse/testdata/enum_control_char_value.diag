@@ -1,0 +1,4 @@
+lapigo.yaml:5:45: field "status" has an enum value containing a control character ("\n" at rune index 1)
+   5 |       status: { type: enum, values: [draft, "a\nb"], required: true }
+     |                                             ^^^^^^
+   remove the control character; enum values are emitted into the migration's CHECK constraint

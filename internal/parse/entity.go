@@ -8,8 +8,8 @@ import (
 )
 
 // entityKeys is the complete set of keys an entity's mapping may declare
-// (spec §3).
-var entityKeys = []string{"table", "fields", "sort", "filters", "endpoints"}
+// (spec §3, §3.5).
+var entityKeys = []string{"table", "fields", "sort", "filters", "endpoints", "indexes"}
 
 // pendingRelation is a belongsTo declaration whose target cannot be
 // resolved until every entity in the schema has been built and
@@ -56,6 +56,16 @@ type pendingFilter struct {
 	name source.At[string]
 }
 
+// pendingIndex is one `indexes:` entry: its filter columns as raw names,
+// resolved to *ir.Field pointers in the second pass alongside `filters:` and
+// `sort:` entries (spec §3.5). The semantic rules a declared index must
+// satisfy -- every column is a declared filter, at least two columns, no
+// duplicates -- are internal/validate's job, not this package's: they need the
+// entity's whole resolved Filters list to decide against.
+type pendingIndex struct {
+	columns []pendingFilter
+}
+
 // buildEntity resolves one `entities:` member's mapping into an *ir.Entity,
 // gathering (but not resolving) its belongsTo relations, sort keys and
 // filters for the second pass. name is the entity's own name, already
@@ -68,12 +78,12 @@ type pendingFilter struct {
 // sortKeys empty, but resolveSchema still needs to tell "omitted" from
 // "present" to know whether to synthesize the `[-<pk>]` default -- sortKeys
 // alone cannot answer that, since a nil slice looks the same either way.
-func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entity, []*pendingRelation, []pendingSortKey, bool, []pendingFilter) {
+func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entity, []*pendingRelation, []pendingSortKey, bool, []pendingFilter, []pendingIndex) {
 	r.requireExportableName(name, "entity name")
 
 	m, ok := r.requireMapping(body, entityContext(name.Value))
 	if !ok {
-		return nil, nil, nil, false, nil
+		return nil, nil, nil, false, nil, nil
 	}
 	entries := r.entries(m)
 	r.checkUnknownKeys(entries, entityContext(name.Value), entityKeys)
@@ -86,7 +96,7 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 	}
 
 	var fieldsNode ast.Node
-	var sortNode, filtersNode, endpointsNode ast.Node
+	var sortNode, filtersNode, endpointsNode, indexesNode ast.Node
 	for _, entry := range entries {
 		switch entry.Key.Value {
 		case "table":
@@ -105,6 +115,8 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 			filtersNode = entry.Value
 		case "endpoints":
 			endpointsNode = entry.Value
+		case "indexes":
+			indexesNode = entry.Value
 		}
 	}
 
@@ -123,12 +135,16 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 		if filtersNode != nil {
 			filters = r.buildPendingFilters(filtersNode, name.Value)
 		}
+		var indexes []pendingIndex
+		if indexesNode != nil {
+			indexes = r.buildPendingIndexes(indexesNode, name.Value)
+		}
 		e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
-		return e, relations, sortKeys, sortNode != nil, filters
+		return e, relations, sortKeys, sortNode != nil, filters, indexes
 	}
 
 	e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
-	return e, nil, nil, false, nil
+	return e, nil, nil, false, nil, nil
 }
 
 // buildFieldsAndRelations walks an entity's `fields:` mapping, building an

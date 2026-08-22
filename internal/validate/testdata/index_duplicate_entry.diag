@@ -1,0 +1,4 @@
+lapigo.yaml:10:19: declared index duplicates an earlier declared index
+   10 |       - filters: [status, author]
+      |                   ^^^^^^
+   delete this entry; two identical indexes double the write cost for no read benefit (spec §7.2)

@@ -1,0 +1,9 @@
+lapigo.yaml:3:12: table name "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" is longer than Postgres's 63-byte identifier limit (64 bytes)
+   3 |     table: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   Postgres truncates identifiers past 63 bytes, so the generated code and the database would disagree; use a shorter name
+
+lapigo.yaml:6:7: field name "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" is longer than Postgres's 63-byte identifier limit (64 bytes)
+   6 |       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: { type: string }
+     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   Postgres truncates identifiers past 63 bytes, so the generated code and the database would disagree; use a shorter name

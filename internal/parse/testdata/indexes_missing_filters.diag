@@ -1,0 +1,4 @@
+lapigo.yaml:8:9: `indexes` entry of entity "article" has no `filters`
+   8 |       - {}
+     |         ^
+   add a `filters:` list naming the filters this index combines, e.g. `filters: [status, author]`

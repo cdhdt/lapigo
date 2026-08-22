@@ -23,6 +23,7 @@ type entityBuild struct {
 	relations []*pendingRelation
 	sortKeys  []pendingSortKey
 	filters   []pendingFilter
+	indexes   []pendingIndex
 }
 
 // resolveSchema walks the whole document body into a *ir.Schema, following
@@ -76,7 +77,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 
 	builds := make([]entityBuild, 0, len(entityEntries))
 	for _, e := range entityEntries {
-		entity, relations, sortKeys, sortWritten, filters := r.buildEntity(e.Key, e.Value)
+		entity, relations, sortKeys, sortWritten, filters, indexes := r.buildEntity(e.Key, e.Value)
 		if entity == nil {
 			continue
 		}
@@ -102,7 +103,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 			entity.Sort.Desc = true
 			sortKeys = append(sortKeys, pendingSortKey{name: source.Bare(entity.PK.Name.Value)})
 		}
-		builds = append(builds, entityBuild{entity: entity, nameAt: e.Key, relations: relations, sortKeys: sortKeys, filters: filters})
+		builds = append(builds, entityBuild{entity: entity, nameAt: e.Key, relations: relations, sortKeys: sortKeys, filters: filters, indexes: indexes})
 	}
 
 	r.checkDuplicateTables(builds)
@@ -146,6 +147,20 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 				continue
 			}
 			b.entity.Filters = append(b.entity.Filters, ir.Filter{Field: field, Op: ir.FilterOpEq, Span: filt.name.Span()})
+		}
+		for _, idx := range b.indexes {
+			columns := make([]ir.IndexColumn, 0, len(idx.columns))
+			for _, col := range idx.columns {
+				field := b.entity.Lookup(col.name.Value)
+				if field == nil {
+					r.addAt(col.name, "", "index column %q is not a field of entity %q", col.name.Value, b.entity.Name)
+					continue
+				}
+				columns = append(columns, ir.IndexColumn{Field: field, Span: col.name.Span()})
+			}
+			if len(columns) > 0 {
+				b.entity.Indexes = append(b.entity.Indexes, ir.Index{Columns: columns})
+			}
 		}
 	}
 

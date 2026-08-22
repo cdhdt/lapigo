@@ -1,0 +1,8 @@
+entities:
+  gizmo:
+    fields:
+      id:         { type: uuid, pk: true, default: uuid }
+      created_at: { type: timestamp, required: true, default: now, immutable: true }
+      state:      { type: string, default: active }
+      quota:      { type: int, default: 5 }
+    sort: [-created_at, -id]

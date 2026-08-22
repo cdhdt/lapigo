@@ -1,0 +1,4 @@
+lapigo.yaml:5:45: field "status" has an empty enum value
+   5 |       status: { type: enum, values: [draft, ""], required: true }
+     |                                             ^^
+   give every enum member a name, e.g. `values: [draft, published]`

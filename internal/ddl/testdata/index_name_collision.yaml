@@ -1,0 +1,10 @@
+entities:
+  widget:
+    fields:
+      id:  { type: uuid, pk: true }
+      a_b: { type: string, required: true }
+      a:   { type: string, required: true }
+      b:   { type: string, required: true }
+    filters: [a_b, a, b]
+    indexes:
+      - filters: [a, b]

@@ -55,6 +55,13 @@ var goldenCases = []string{
 	"multiple_errors_sorted_by_position",
 	"belongs_to_unknown_on_delete",
 	"belongs_to_field_options",
+	"indexes_unknown_key",
+	"indexes_missing_filters",
+	"indexes_unknown_field",
+	"indexes_filters_empty",
+	"enum_empty_value",
+	"enum_control_char_value",
+	"identifier_too_long",
 }
 
 // successFixtures are the .yaml files under testdata/ that parse cleanly and
@@ -66,6 +73,10 @@ var goldenCases = []string{
 // sat untested with its error path uncovered.
 var successFixtures = map[string]bool{
 	"canonical": true,
+	// declared_indexes carries the `indexes:` key of spec §3.5; its resolved
+	// IR is asserted in index_test.go, including column pointer identity and
+	// the exact spans of both declared columns.
+	"declared_indexes": true,
 }
 
 // TestParse_NoOrphanFixtures fails when a testdata/*.yaml file is classified

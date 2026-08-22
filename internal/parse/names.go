@@ -16,17 +16,33 @@ import (
 // (spec §3, CLAUDE.md "identifiers come from a whitelist").
 var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// maxIdentifierBytes is Postgres's identifier length limit (NAMEDATALEN-1).
+// Postgres does not reject a longer identifier -- it truncates it to 63
+// bytes, silently -- which would leave the generated Go code addressing a
+// table or column the database never created under that name. Names are
+// rejected at this length rather than mangled (CLAUDE.md §5.6's principle:
+// reject, never mangle): the schema author can see and fix a long name, but
+// nobody can see which 63 bytes the database kept.
+const maxIdentifierBytes = 63
+
 // requireIdentifier reports a positioned diagnostic and returns false when
-// at.Value does not match identifierPattern. what names the kind of
-// identifier in the message ("table name", "entity name", "field name").
+// at.Value does not match identifierPattern, or is longer than Postgres's
+// 63-byte identifier limit. what names the kind of identifier in the message
+// ("table name", "entity name", "field name").
 func (r *resolver) requireIdentifier(at source.At[string], what string) bool {
-	if identifierPattern.MatchString(at.Value) {
-		return true
+	if !identifierPattern.MatchString(at.Value) {
+		r.addAt(at,
+			"identifiers must start with a letter or underscore, and contain only letters, digits, and underscores",
+			"%s %q is not a valid identifier", what, at.Value)
+		return false
 	}
-	r.addAt(at,
-		"identifiers must start with a letter or underscore, and contain only letters, digits, and underscores",
-		"%s %q is not a valid identifier", what, at.Value)
-	return false
+	if len(at.Value) > maxIdentifierBytes {
+		r.addAt(at,
+			"Postgres truncates identifiers past 63 bytes, so the generated code and the database would disagree; use a shorter name",
+			"%s %q is longer than Postgres's 63-byte identifier limit (%d bytes)", what, at.Value, len(at.Value))
+		return false
+	}
+	return true
 }
 
 // requireExportableName is requireIdentifier plus the check goName's own

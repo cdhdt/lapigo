@@ -1,0 +1,15 @@
+entities:
+  article:
+    fields:
+      id: { type: uuid, pk: true }
+      created_at: { type: timestamp, required: true, default: now, immutable: true }
+      status: { type: enum, values: [draft, published], required: true }
+      author: { type: belongsTo, target: user }
+    sort: [-created_at, -id]
+    filters: [status, author]
+    indexes:
+      - filters: [status, author]
+      - filters: [author, status]
+  user:
+    fields:
+      id: { type: uuid, pk: true }

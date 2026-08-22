@@ -1,0 +1,10 @@
+entities:
+  entity_with_a_deliberately_long_name:
+    table: table_with_a_deliberately_long_table_name
+    fields:
+      id:                                       { type: uuid, pk: true }
+      created_at:                               { type: timestamp, required: true, immutable: true }
+      filter_column_with_a_deliberately_long_name: { type: string, required: true }
+      a_unique_column_with_an_extremely_long_name_here_too: { type: string, unique: true }
+    sort: [-created_at, -id]
+    filters: [filter_column_with_a_deliberately_long_name]

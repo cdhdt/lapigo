@@ -225,6 +225,31 @@ func TestSchema_Freeze_FilterFieldNotOwnField(t *testing.T) {
 	}
 }
 
+// TestSchema_Freeze_IndexColumnNotOwnField is the declared-index counterpart
+// of TestSchema_Freeze_FilterFieldNotOwnField: an IndexColumn.Field that is
+// not an element of the entity's own Fields must fail Freeze, by identity —
+// the decoy here shares the name of a real field ("status"), so only the
+// pointer check catches it.
+func TestSchema_Freeze_IndexColumnNotOwnField(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	status := &Field{Name: source.Bare("status"), Type: FieldTypeEnum, EnumGoType: "WidgetStatus"}
+	decoy := &Field{Name: source.Bare("status"), Type: FieldTypeEnum, EnumGoType: "WidgetStatus"}
+	e := &Entity{
+		Name:   "widget",
+		Fields: []*Field{id, status},
+		PK:     id,
+		Indexes: []Index{{Columns: []IndexColumn{
+			{Field: status, Span: source.Span{Start: source.Pos{Line: 9, Column: 22}, End: source.Pos{Line: 9, Column: 28}}},
+			{Field: decoy, Span: source.Span{Start: source.Pos{Line: 9, Column: 30}, End: source.Pos{Line: 9, Column: 34}}},
+		}}},
+	}
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err == nil {
+		t.Fatal("Freeze() = nil, want an error: the second declared index column is a decoy sharing a field's name, not the field itself")
+	}
+}
+
 // TestSchema_Freeze_RelationTargetNotInSchema proves the relation check is by
 // identity, not by name. The decoy shares the schema entity's name, which is
 // the case that actually matters: a Relation.Target retargeted by sorting

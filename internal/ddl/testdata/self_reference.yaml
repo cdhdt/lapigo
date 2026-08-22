@@ -1,0 +1,5 @@
+entities:
+  employee:
+    fields:
+      id:      { type: uuid, pk: true }
+      manager: { type: belongsTo, target: employee }
