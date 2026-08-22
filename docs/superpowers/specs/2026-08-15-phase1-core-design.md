@@ -979,7 +979,13 @@ Test-driven. The failing test comes first.
   output users run against a real database, so a regeneration is reviewed as
   a diff, never routine. Determinism (twenty runs, byte equality) and
   Postgres's 63-byte identifier limit are asserted on every fixture's real
-  output.
+  output. Every golden fixture is also **applied to a real Postgres**
+  (`LAPIGO_TEST_DATABASE_URL`, the variable CI already provisions): rendering
+  cleanly is not the SQL analogue of compiling — applying is — so an emitter
+  change that produces server-rejected SQL fails CI even when every
+  byte-for-byte assertion still passes. Each fixture applies into its own
+  fresh schema, and the tier skips cleanly when the variable is unset, so
+  `make check` needs no Postgres.
 - **Templates** — golden files under `testdata/<case>/` with the `-update` flag
   convention, so regeneration is reviewed as a diff.
 - **Generated code compiles.** Golden output is written to a temp module and
@@ -1034,6 +1040,17 @@ because it is believed.
    claim about a database lapigo neither created nor inspected — does not
    apply now that DDL generation is phase 1: lapigo creates exactly what the
    key declares.
+6. **A `version: true` column may be nullable.** §3's own example writes
+   `version: { type: int, version: true }` with no `required:`, so the DDL
+   correctly emits a nullable integer. But a row whose version is NULL makes
+   every `version = $n` comparison yield unknown, so §6.6's `If-Match` update
+   matches zero rows and returns `409` forever — §3.3 rule 3's reasoning
+   ("SQL comparison against NULL yields unknown") applied to a different
+   column. Surfaced by the step 4 review against a live database; it bites at
+   step 7 (the store), not at the emitter, so the DDL is not where it is
+   decided: either the validator requires a version column to carry
+   `required: true` as well, or §6.6 defines NULL-version update semantics.
+   Must be settled before step 7 begins.
 
 ---
 
@@ -1125,3 +1142,4 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-08-22 | step 4 | Foreign keys emit as `ALTER TABLE` after every `CREATE TABLE`; every table and column identifier is emitted double-quoted (the pg_dump convention); derived constraint and index names follow Postgres conventions (`_pkey`, `_key`, `_check`, `_fkey`, `_idx`), kept within 63 bytes by deterministic truncation plus a hash suffix; `default: now` emits `DEFAULT CURRENT_TIMESTAMP`, literals emit as single-quoted SQL strings, `default: uuid` emits nothing | A relation cycle (nullable mutual FKs) is representable and resolves — only PK-belongsTo cycles are parse errors — so no CREATE TABLE order can carry inline REFERENCES. The parser's identifier grammar accepts Postgres reserved words (`order`, `select`, `user` are legal field names), and an unquoted reserved word in a table or column position is a syntax error at apply time — quoting everything makes the bug unrepresentable rather than maintained against a keyword list that drifts with Postgres versions. Postgres silently truncates identifiers past 63 bytes, colliding prefix-sharing names. The DEFAULT rules pin what §3.2 left implicit; uuid stays client-side per its own rationale. |
 | 2026-08-22 | §3.1 (parse rules) | Identifiers are rejected above Postgres's 63-byte limit; enum values must be non-empty and free of control characters | Postgres would silently truncate a longer identifier, leaving generated code and database disagreeing; a control character in an enum value cannot be emitted into the migration's CHECK literal (Postgres rejects NUL outright). |
 | 2026-08-22 | §3.1 (validation) | `on_delete: set_null` is rejected on a relation that is not nullable | The DDL emits the clause as asked; NOT NULL plus ON DELETE SET NULL applies cleanly and then fails on every delete of a referenced row — a runtime 500 generated from a schema that validated clean. |
+| 2026-08-22 | §8 | The DDL test tier applies every golden fixture to a real Postgres via `LAPIGO_TEST_DATABASE_URL`, each into a fresh schema, skipping cleanly when unset; pgx v5 enters the generator's go.mod as a test-only dependency | Review of step 4 against a live database: CI has provisioned a Postgres and exported the variable since the first pipeline, and nothing in the repository read it — "applies cleanly" was established by hand once, and nothing re-established it. pgx is the project's chosen driver (§2.3); executing psql instead would trade a declared module dependency for an undeclared environment one. |
