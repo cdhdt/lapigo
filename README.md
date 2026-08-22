@@ -2,9 +2,11 @@
 
 **Generate idiomatic Go CRUD APIs from a YAML schema.**
 
-> **Status: design phase.** The architecture is settled and documented; no
-> implementation exists yet. Watch the repository if you want to follow along,
-> but do not expect working code today.
+> **Status: phase 1 in build.** The schema parser, the intermediate
+> representation and the validator are written and merged. The code generator
+> itself is not, so there is no usable binary yet — `lapigo new` and
+> `lapigo gen` are the last step of phase 1. Watch the repository if you want to
+> follow along, but do not expect to generate an API today.
 
 ---
 
@@ -64,19 +66,26 @@ application code, and cursor pagination. Different tool, different problem.
 
 ## Roadmap
 
-| Phase | Scope |
-|-------|-------|
-| 1 | Core: YAML parser, IR, template engine, CRUD, cursor pagination, filters, sorting |
-| 2 | SQL migrations generated from the schema |
-| 3 | JWT authentication and per-endpoint role permissions |
-| 4 | OpenAPI document generation |
-| 5 | Optional Redis caching with range-based invalidation |
+| Phase | Scope | State |
+|-------|-------|-------|
+| 1 | Core: YAML parser, IR, validator, `CREATE TABLE` generation, template engine, CRUD, cursor pagination, filters, sorting | in build — parser, IR and validator merged |
+| 2 | Schema diffing and versioned migrations | planned |
+| 3 | JWT authentication and per-endpoint role permissions | planned |
+| 4 | OpenAPI document generation | planned |
+| 5 | Optional Redis caching with range-based invalidation | planned |
+
+Phase 1 owns the SQL schema it queries. Generating a store and handlers for
+tables nothing creates produces output that cannot be run or tested, so the
+initial `CREATE TABLE` migration is part of the core rather than deferred.
+Rewriting a migration as the schema changes — diffing — is what phase 2 adds.
 
 ## Documentation
 
 - [`CLAUDE.md`](CLAUDE.md) — architecture decisions and contribution rules
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`SECURITY.md`](SECURITY.md) — reporting a vulnerability
+- [`docs/superpowers/specs/2026-08-15-phase1-core-design.md`](docs/superpowers/specs/2026-08-15-phase1-core-design.md)
+  — the accepted phase 1 specification, and the contract the code is held to
 - `docs/notes/` — design notes (in French)
 
 ## Licence

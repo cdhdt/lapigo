@@ -1,7 +1,8 @@
 # Phase 1 — Core generator design
 
-Status: **proposed**, revision 2
+Status: **accepted**, revision 2
 Date: 2026-08-15
+Amended: 2026-08-19 (§2.2, §3.3 — see §13)
 
 Revision 2 follows an adversarial review of revision 1 conducted against live
 PostgreSQL 17.10 and 18.6, pgx v5.10.0, Go 1.26.5 and goccy/go-yaml v1.19.2.
@@ -974,26 +975,47 @@ because it is believed.
 4. **`max` on `string`** emits both `varchar(n)` and a Go validation check. The
    two can disagree if the migration is edited by hand; phase 2's diffing is
    what resolves that properly.
+5. **The entity-level `indexes:` key is used in §7.2 and defined nowhere.**
+   §7.2 offers it as the escape hatch for a filter combination the derived
+   *N+1* set does not cover, but §3's schema example does not show it, §3.1 is
+   field options only, and there is no entity-options table for it to live in.
+   `internal/parse` does not read it. **Step 4 must settle this before it emits
+   an index set:** either specify the key in §3 and parse it, or drop it from
+   §7.2 and say that a user needing a specific combination declares the filter
+   order instead. Shipping the DDL emitter while §7.2 promises a key the parser
+   ignores is the worse outcome.
 
 ---
 
 ## 10. Build order
 
-1. `Pos`, `At[T]`, `Diagnostic`, rendering, tab rejection.
-2. Parser: YAML → AST → IR with positions.
-3. Validator: §3.1, §3.3, §3.4, §5.6.
-4. DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2.
-5. Template engine, formatting, determinism, staging, lock.
-6. Hooks interfaces and no-op implementations.
-7. Model and input types (§6.5), store, cursor encoding, keyset predicate.
-8. Handlers, error envelope, router, resource bounds.
-9. `lapigo new`, `lapigo gen`.
+| # | Step | Package | State |
+|---|---|---|---|
+| 1 | `Pos`, `At[T]`, `Diagnostic`, rendering, tab rejection | `internal/source`, `internal/diag` | done — `bba8255` |
+| 2 | Parser: YAML → AST → IR with positions | `internal/ir`, `internal/parse` | done — `37893df` |
+| 3 | Validator: §3.1, §3.3, §3.4, §5.6 | `internal/validate` | done — `a87b00d` |
+| 4 | DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | not decided | **next** |
+| 5 | Template engine, formatting, determinism, staging, lock | `internal/gen` | not started |
+| 6 | Hooks interfaces and no-op implementations | `internal/gen` | not started |
+| 7 | Model and input types (§6.5), store, cursor encoding, keyset predicate | `internal/gen` | not started |
+| 8 | Handlers, error envelope, router, resource bounds | `internal/gen` | not started |
+| 9 | `lapigo new`, `lapigo gen` | `cmd/lapigo` | not started |
 
 The dependency order is real and revision 1 got it wrong by claiming steps 5–7
 could run in parallel: the store invokes hooks inside its transaction, so hooks
 precede the store, and handlers depend on the store's types and cursor
 encoding. **7 depends on 6; 8 depends on 7.** Only 4 is genuinely independent of
 5–8 once 3 is in place.
+
+**Step 5 carries a debt from step 3.** `internal/validate`'s
+`reservedMethodNames` rejects a field whose Go name would collide with a method
+the templates generate (§5.6). That list was asserted from this specification
+because the templates it names did not exist yet, and nothing links the two: a
+method added to a template without a matching entry there produces a schema
+that validates clean and fails to compile only once regenerated. Per CLAUDE.md
+an invariant that matters is checked by something, not asserted in a comment —
+so the first commit of step 5 must add a test that derives the reserved set
+from the templates and fails when they disagree.
 
 ---
 
@@ -1034,3 +1056,17 @@ Recorded so the reasoning is not rediscovered.
 | Staging directory dot-prefixed; atomicity claim withdrawn | A plain sibling directory is compiled by `go build ./...`. Two renames are not atomic; the recovery path is stated instead. |
 | `go/types` test tier merged into `go build` | "No subprocess" was false once generated code imports pgx. |
 | Build order corrected | Hooks precede the store, which precedes the handlers. |
+
+---
+
+## 13. Amendments after acceptance
+
+Revision 2 was accepted as written; these changes were made to it afterwards,
+each because implementing against it exposed something it had not settled.
+A change here is a change to the contract — record it, do not make it silently.
+
+| Date | Section | Change | Cause |
+|---|---|---|---|
+| 2026-08-19 | §2.2 | `Entity` gained `NameSpan` and `TableSpan`, `Filter` gained `Span`, `Relation` gained `NameSpan` and `TargetSpan`, and `SortKey.Pos` became `SortKey.Span` | Building the validator showed the IR could not blame the right token: a diagnostic about a filter pointed at the filtered field's declaration rather than at the offending `filters:` entry. Only the parser sees the written form, so only it can record an exact width. |
+| 2026-08-19 | §2.2 | Every `Relation` that exists carries a valid `TargetSpan` — stated as an invariant `Schema.Freeze` checks, not as prose | A first attempt claimed the opposite (a zero `TargetSpan` when `target:` was omitted). An adversarial review disproved it by enumerating all four target forms: no `Relation` is ever appended whose target went unwritten. |
+| 2026-08-19 | §2.2, §3.3 | Omitting `sort:` synthesizes `[-<pk>]`; writing `sort: []` is a parse error | CLAUDE.md decision 4 requires that a sort with no unique tiebreaker not be expressible. Omitting `sort:` produced an entity with zero sort keys and zero diagnostics, so it was. |
