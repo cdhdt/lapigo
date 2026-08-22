@@ -222,7 +222,8 @@ different needs.
 
 ### 2.3 Dependencies
 
-Generator: `github.com/goccy/go-yaml`, `golang.org/x/tools/imports`, stdlib.
+Generator: `github.com/goccy/go-yaml`, `golang.org/x/tools/imports`, stdlib, plus
+`github.com/jackc/pgx/v5` in tests only (§8's DDL apply tier).
 Generated code: stdlib and `github.com/jackc/pgx/v5`. Nothing else.
 
 `gopkg.in/yaml.v3` was archived on 1 April 2025 and must not be used.
@@ -984,8 +985,11 @@ Test-driven. The failing test comes first.
   cleanly is not the SQL analogue of compiling — applying is — so an emitter
   change that produces server-rejected SQL fails CI even when every
   byte-for-byte assertion still passes. Each fixture applies into its own
-  fresh schema, and the tier skips cleanly when the variable is unset, so
-  `make check` needs no Postgres.
+  fresh schema; the tier skips only outside CI — a skipped test prints
+  nothing under `go test ./...` without `-v`, so in CI (where the variable
+  should always be set) a missing `LAPIGO_TEST_DATABASE_URL` fails the build
+  rather than leaving a green pipeline that proves nothing, while
+  `make check` on a machine with no Postgres stays green.
 - **Templates** — golden files under `testdata/<case>/` with the `-update` flag
   convention, so regeneration is reviewed as a diff.
 - **Generated code compiles.** Golden output is written to a temp module and
@@ -1142,4 +1146,4 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-08-22 | step 4 | Foreign keys emit as `ALTER TABLE` after every `CREATE TABLE`; every table and column identifier is emitted double-quoted (the pg_dump convention); derived constraint and index names follow Postgres conventions (`_pkey`, `_key`, `_check`, `_fkey`, `_idx`), kept within 63 bytes by deterministic truncation plus a hash suffix; `default: now` emits `DEFAULT CURRENT_TIMESTAMP`, literals emit as single-quoted SQL strings, `default: uuid` emits nothing | A relation cycle (nullable mutual FKs) is representable and resolves — only PK-belongsTo cycles are parse errors — so no CREATE TABLE order can carry inline REFERENCES. The parser's identifier grammar accepts Postgres reserved words (`order`, `select`, `user` are legal field names), and an unquoted reserved word in a table or column position is a syntax error at apply time — quoting everything makes the bug unrepresentable rather than maintained against a keyword list that drifts with Postgres versions. Postgres silently truncates identifiers past 63 bytes, colliding prefix-sharing names. The DEFAULT rules pin what §3.2 left implicit; uuid stays client-side per its own rationale. |
 | 2026-08-22 | §3.1 (parse rules) | Identifiers are rejected above Postgres's 63-byte limit; enum values must be non-empty and free of control characters | Postgres would silently truncate a longer identifier, leaving generated code and database disagreeing; a control character in an enum value cannot be emitted into the migration's CHECK literal (Postgres rejects NUL outright). |
 | 2026-08-22 | §3.1 (validation) | `on_delete: set_null` is rejected on a relation that is not nullable | The DDL emits the clause as asked; NOT NULL plus ON DELETE SET NULL applies cleanly and then fails on every delete of a referenced row — a runtime 500 generated from a schema that validated clean. |
-| 2026-08-22 | §8 | The DDL test tier applies every golden fixture to a real Postgres via `LAPIGO_TEST_DATABASE_URL`, each into a fresh schema, skipping cleanly when unset; pgx v5 enters the generator's go.mod as a test-only dependency | Review of step 4 against a live database: CI has provisioned a Postgres and exported the variable since the first pipeline, and nothing in the repository read it — "applies cleanly" was established by hand once, and nothing re-established it. pgx is the project's chosen driver (§2.3); executing psql instead would trade a declared module dependency for an undeclared environment one. |
+| 2026-08-22 | §8 | The DDL test tier applies every golden fixture to a real Postgres via `LAPIGO_TEST_DATABASE_URL`, each into a fresh schema; it skips only outside CI (an unset variable in CI fails the build, so a pipeline that has lost its database goes red instead of silently green); pgx v5 enters the generator's go.mod as a test-only dependency | Review of step 4 against a live database: CI has provisioned a Postgres and exported the variable since the first pipeline, and nothing in the repository read it — "applies cleanly" was established by hand once, and nothing re-established it. The CI guard answers the follow-up: a skip prints nothing without `-v`, so the tier must fail where a database was promised. pgx is the project's chosen driver (§2.3); executing psql instead would trade a declared module dependency for an undeclared environment one. |

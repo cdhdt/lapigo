@@ -41,6 +41,17 @@ import (
 func TestEmit_GoldenApplies(t *testing.T) {
 	url := os.Getenv("LAPIGO_TEST_DATABASE_URL")
 	if url == "" {
+		// A skip prints nothing under `go test ./...` without -v, which is
+		// how CI runs. If the variable ever stops reaching the test process
+		// there -- the env block edited, the service renamed, a port change
+		// -- a skip would leave the pipeline green while proving nothing,
+		// the same shape as the defect this tier exists to close. GitHub
+		// Actions always sets CI=true, so: skip only where there is
+		// genuinely no database to reach, fail where one was promised.
+		if os.Getenv("CI") != "" {
+			t.Fatal("LAPIGO_TEST_DATABASE_URL is unset in CI: the apply tier " +
+				"would skip silently and the pipeline would stay green")
+		}
 		t.Skip("LAPIGO_TEST_DATABASE_URL not set; the apply tier needs a real Postgres")
 	}
 
