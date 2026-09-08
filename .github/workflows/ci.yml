@@ -1,3 +1,7 @@
+# The steps live in cdhdt/dev-process so every project runs the same checks in
+# the same order. `make check` mirrors them locally: when one changes there, it
+# changes in the Makefile the same day, or a green local check stops meaning a
+# green pipeline.
 name: CI
 
 on:
@@ -10,51 +14,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: lapigo_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-    env:
-      LAPIGO_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/lapigo_test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-          check-latest: true
-
-      - name: gofmt
-        run: |
-          out=$(gofmt -l .)
-          if [ -n "$out" ]; then
-            echo "These files are not gofmt-clean:"
-            echo "$out"
-            exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
-
-      - name: Test
-        run: go test -race ./...
-
-      - name: Build
-        run: go build ./...
+  ci:
+    uses: cdhdt/dev-process/.github/workflows/go-ci.yml@main
+    with:
+      go-version: '1.26'
+      postgres: true
+      database-url-env: LAPIGO_TEST_DATABASE_URL

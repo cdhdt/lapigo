@@ -12,6 +12,13 @@ behind them, and then read the specification the current work implements:
 It is detailed on purpose — a contract, not a sketch — and its §10 says which
 build order step is next and why the order cannot be reshuffled.
 
+Everything binding on you as a contributor is in this file. If you want the
+long form — the cycle a task goes through, what a reviewer owes you, and the
+incidents each rule came from — it lives in
+[cdhdt/dev-process](https://github.com/cdhdt/dev-process), shared across
+projects. Where it disagrees with this file, **this file wins**: it is closer
+to the code and it is what a reviewer will apply.
+
 Several of the architecture decisions look restrictive on purpose — cursor-only
 pagination, no user-overridable templates, no dependencies in generated code.
 They were settled deliberately.
@@ -22,14 +29,29 @@ of your time rather than a judgement on your idea.
 
 ## Workflow
 
-1. Branch from `develop`: `feat/<short-name>`, `fix/<short-name>`, or
-   `docs/<short-name>`.
-2. Write the failing test first. This project is test-driven, and the parser's
-   error messages are part of its public contract — assert on their **exact**
-   text. `CLAUDE.md`'s testing section explains why substring assertions get
-   rejected here, with the numbers from the review that taught us.
-3. Keep `gofmt`, `go vet`, and `staticcheck` clean.
-4. Open a pull request **against `develop`**, never against `main`.
+1. **Start from an issue.** No branch without a ticket — the pull request
+   closes it with `Closes #N`, and that only works if it exists.
+2. **Work in a dedicated worktree**, not a `git checkout` in a shared clone:
+
+   ```bash
+   git fetch origin
+   git worktree add ../lapigo-<subject>-<N> -b <type>/<subject>-<N> origin/develop
+   ```
+
+   Branch types: `feat`, `fix`, `chore`, `ci`, `docs`, `refactor`, `test`.
+3. **Write the failing test first.** This project is test-driven, and the
+   parser's error messages are part of its public contract — assert on their
+   **exact** text. `CLAUDE.md`'s testing section explains why substring
+   assertions get rejected here, with the numbers from the review that taught
+   us.
+4. **Open the pull request as a draft at your first commit**, against
+   `develop`, never against `main`. That is what makes work in progress
+   visible; without it two people take the same ticket.
+5. Keep `gofmt`, `go vet`, and `staticcheck` clean — `make check` runs exactly
+   what CI runs, in the same order.
+6. Mark it ready for review when CI is green. Review is adversarial and never
+   by the author: the reviewer's job is to refute the change, and approval is
+   what is left when that failed.
 
 A pull request should say what changed and why. If it changes generated output,
 include a before/after sample of the generated Go — reviewers need to see what
