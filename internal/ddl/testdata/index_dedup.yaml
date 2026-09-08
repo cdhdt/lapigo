@@ -1,0 +1,7 @@
+entities:
+  post:
+    fields:
+      id:     { type: uuid, pk: true }
+      status: { type: enum, values: [draft, published], required: true, immutable: true }
+    sort: [-status, -id]
+    filters: [status]

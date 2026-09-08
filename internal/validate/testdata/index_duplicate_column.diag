@@ -1,0 +1,4 @@
+lapigo.yaml:9:27: declared index lists filter "status" twice
+   9 |       - filters: [status, status]
+     |                           ^^^^^^
+   remove the duplicate; an index names each filter column once (spec §3.5)

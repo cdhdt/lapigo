@@ -1,0 +1,5 @@
+entities:
+  tag:
+    fields:
+      id:   { type: uuid, pk: true }
+      kind: { type: enum, values: ["it's", 'plain'], required: true }

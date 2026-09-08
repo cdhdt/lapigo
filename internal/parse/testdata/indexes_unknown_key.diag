@@ -1,0 +1,9 @@
+lapigo.yaml:9:9: unknown key "filter" in entity `article` `indexes` entry
+   9 |       - filter: [status, author]
+     |         ^^^^^^
+   did you mean `filters`?
+
+lapigo.yaml:9:15: `indexes` entry of entity "article" has no `filters`
+   9 |       - filter: [status, author]
+     |               ^
+   add a `filters:` list naming the filters this index combines, e.g. `filters: [status, author]`

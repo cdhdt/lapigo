@@ -1,0 +1,3 @@
+lapigo.yaml:9:27: index column "categorie" is not a field of entity "article"
+   9 |       - filters: [status, categorie]
+     |                           ^^^^^^^^^

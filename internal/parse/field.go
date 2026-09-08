@@ -2,6 +2,8 @@ package parse
 
 import (
 	"sort"
+	"strings"
+	"unicode"
 
 	"github.com/goccy/go-yaml/ast"
 
@@ -233,7 +235,16 @@ func fieldTypeName(t ir.FieldType) string { return t.String() }
 
 // buildEnumValues resolves a `values:` sequence into the At[string] slice
 // ir.Field.EnumValues holds, reporting a diagnostic for any element that is
-// not a plain string.
+// not a plain string, that is empty, or that contains a control character.
+//
+// The syntax rules are not cosmetic: every enum value is emitted into the
+// CHECK constraint's SQL string literal by the DDL emitter, and a value
+// containing a control character either breaks the literal outright (Postgres
+// rejects NUL in any string literal) or buries one in a migration nobody can
+// read. An empty value is legal SQL (”) but names nothing a generated Go
+// constant could ever carry. Rejecting both here, at the value's own
+// position, is what makes the DDL emitter's quoting total rather than
+// "total except for inputs the parser let through".
 func (r *resolver) buildEnumValues(n ast.Node, fieldName string) []source.At[string] {
 	seq, ok := r.requireSequence(n, fieldContext(fieldName)+" `values`")
 	if !ok {
@@ -245,7 +256,19 @@ func (r *resolver) buildEnumValues(n ast.Node, fieldName string) []source.At[str
 		if !ok {
 			continue
 		}
-		out = append(out, atOf(s.Value, s.GetToken()))
+		at := atOf(s.Value, s.GetToken())
+		if s.Value == "" {
+			r.addAt(at, "give every enum member a name, e.g. `values: [draft, published]`",
+				"field %q has an empty enum value", fieldName)
+			continue
+		}
+		if pos := strings.IndexFunc(s.Value, unicode.IsControl); pos >= 0 {
+			r.addAt(at, "remove the control character; enum values are emitted into the migration's CHECK constraint",
+				"field %q has an enum value containing a control character (%q at rune index %d)",
+				fieldName, s.Value[pos:pos+1], pos)
+			continue
+		}
+		out = append(out, at)
 	}
 	return out
 }

@@ -84,6 +84,23 @@ var goldenCases = []string{
 	// itself changing.
 	"sort_key_nullable_decimal",
 
+	// The declared-index rules of spec §3.5/§7.2: a column that is not a
+	// declared filter, an entry naming one filter (the derived set already
+	// covers single filters), a column named twice, and two entries naming
+	// the same combination. declared_indexes_valid.yaml is the success
+	// counterpart, including two entries over the same filters in different
+	// orders -- genuinely different indexes, so both are legal.
+	"index_column_not_a_filter",
+	"index_single_filter",
+	"index_duplicate_column",
+	"index_duplicate_entry",
+
+	// set_null_on_required is the DDL-driven relation rule: NOT NULL plus
+	// ON DELETE SET NULL applies cleanly and then fails on every delete of
+	// a referenced row. nullable_set_null in successFixtures is the legal
+	// counterpart.
+	"set_null_on_required",
+
 	// entity_triple_collision is the mutation-gap regression for
 	// validatePackageNames' own `seen` map: three entities named a_x, aX and
 	// a__x (sorted by ir.Schema.Freeze into aX, a__x, a_x) all produce Go
@@ -133,6 +150,16 @@ var successFixtures = map[string]bool{
 	// either exemption's deletion produces a spurious mutability warning
 	// where this fixture expects none.
 	"sort_key_default_and_readonly_exempt": true,
+
+	// declared_indexes_valid is the success counterpart of the four index
+	// fixtures above: two declared entries over the same filter pair in
+	// different orders, both legal (they are different indexes), zero
+	// diagnostics.
+	"declared_indexes_valid": true,
+
+	// nullable_set_null is the success counterpart of set_null_on_required:
+	// an optional relation may null out when its target is deleted.
+	"nullable_set_null": true,
 }
 
 // TestValidate_NoOrphanFixtures fails when a testdata/*.yaml file is

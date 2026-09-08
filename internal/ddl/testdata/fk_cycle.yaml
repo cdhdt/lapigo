@@ -1,0 +1,9 @@
+entities:
+  profile:
+    fields:
+      id:   { type: uuid, pk: true }
+      user: { type: belongsTo, target: user, on_delete: cascade }
+  user:
+    fields:
+      id:      { type: uuid, pk: true }
+      profile: { type: belongsTo, target: profile }

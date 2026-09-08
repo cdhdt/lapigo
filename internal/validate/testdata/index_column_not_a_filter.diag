@@ -1,0 +1,4 @@
+lapigo.yaml:9:27: declared index column "body" is not a filter of entity "article"
+   9 |       - filters: [status, body]
+     |                           ^^^^
+   add `body` to `filters:` first: a declared index may only combine filters the entity declares (spec §3.5)

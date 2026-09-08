@@ -1,0 +1,4 @@
+lapigo.yaml:5:7: relation "author" of entity "article" is not nullable but declares on_delete: set_null
+   5 |       author: { type: belongsTo, target: user, required: true, on_delete: set_null }
+     |       ^^^^^^
+   ON DELETE SET NULL cannot null a NOT NULL column: the migration applies, then every delete of a referenced row fails. Make the relation optional, or use on_delete: restrict or cascade

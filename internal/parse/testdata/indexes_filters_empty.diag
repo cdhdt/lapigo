@@ -1,0 +1,4 @@
+lapigo.yaml:8:18: `indexes` entry `filters` of entity "article" is empty
+   8 |       - filters: []
+     |                  ^
+   name at least one filter column, or remove the `indexes` entry

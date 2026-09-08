@@ -35,6 +35,11 @@ func stripPositions(s *ir.Schema) {
 		for i := range e.Filters {
 			e.Filters[i].Span = source.Span{}
 		}
+		for i := range e.Indexes {
+			for j := range e.Indexes[i].Columns {
+				e.Indexes[i].Columns[j].Span = source.Span{}
+			}
+		}
 		for i := range e.Relations {
 			e.Relations[i].NameSpan, e.Relations[i].TargetSpan = source.Span{}, source.Span{}
 		}

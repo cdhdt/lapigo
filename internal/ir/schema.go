@@ -57,6 +57,7 @@ type Entity struct {
 	PK        *Field
 	Sort      SortSpec
 	Filters   []Filter
+	Indexes   []Index // declared composite indexes, declaration order (spec §3.5); the derived set of spec §7.2 is NOT stored — the DDL emitter computes it
 	Relations []Relation
 	Endpoints []Endpoint
 }

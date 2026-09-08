@@ -1,0 +1,4 @@
+lapigo.yaml:8:19: declared index has a single filter column, which the derived index set already covers
+   8 |       - filters: [status]
+     |                   ^^^^^^
+   add a second filter to index a combination, or delete the entry (spec §7.2)

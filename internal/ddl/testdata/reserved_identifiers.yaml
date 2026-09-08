@@ -1,0 +1,12 @@
+entities:
+  query:
+    table: order
+    fields:
+      id:     { type: uuid, pk: true }
+      select: { type: text, required: true }
+      user:   { type: belongsTo, target: grouping, on_delete: cascade }
+      where:  { type: string }
+    filters: [select]
+  grouping:
+    fields:
+      id: { type: uuid, pk: true }
