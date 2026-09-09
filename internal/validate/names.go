@@ -135,6 +135,45 @@ func validateEntityStructNames(e *ir.Entity, file string, diags *diag.Diagnostic
 	}
 }
 
+// validateEnumValueNames reports spec §5.6's enum-value collision: two
+// members of the same field's `values:` list whose computed Go identifier
+// (ir.EnumValue.GoName) collides -- "in-progress" and "in_progress" both
+// producing "InProgress" is issue #24's own worked example. Scoped to one
+// field at a time, unlike validatePackageNames below: an enum field's
+// generated constants live under that field's own EnumGoType and are never
+// mixed with another field's, so two values can only ever collide with each
+// other when they belong to the same field.
+//
+// Follows validateEntityStructNames' own shape exactly: a `seen` map keyed
+// by the collided identifier, populated only on the first sighting so every
+// subsequent diagnostic blames the *first* declared value as "prior" (see
+// TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision for
+// why that matters on three or more colliding values).
+func validateEnumValueNames(e *ir.Entity, file string, diags *diag.Diagnostics) {
+	for _, f := range e.Fields {
+		if f.Type != ir.FieldTypeEnum {
+			continue
+		}
+		seen := make(map[string]ir.EnumValue, len(f.EnumValues))
+		for _, v := range f.EnumValues {
+			prior, ok := seen[v.GoName]
+			if !ok {
+				seen[v.GoName] = v
+				continue
+			}
+			diags.Add(diag.Diagnostic{
+				Severity:  diag.Error,
+				File:      file,
+				Pos:       v.Name.Pos,
+				EndColumn: v.Name.End.Column,
+				Message: fmt.Sprintf("enum value %q and %q of field %q of entity %q both produce Go identifier %q",
+					prior.Name.Value, v.Name.Value, f.Name.Value, e.Name, v.GoName),
+				Hint: "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
+			})
+		}
+	}
+}
+
 // packageDecl is one top-level Go type name the generated model package will
 // declare for the whole schema: an entity's own struct, or one enum field's
 // generated enum type (Field.EnumGoType).

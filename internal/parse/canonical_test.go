@@ -46,7 +46,7 @@ func TestParse_CanonicalSchema(t *testing.T) {
 			{
 				Name: source.Bare("status"), GoName: "Status", Column: "status", Type: ir.FieldTypeEnum,
 				EnumGoType: "ArticleStatus",
-				EnumValues: []source.At[string]{source.Bare("draft"), source.Bare("published")},
+				EnumValues: []ir.EnumValue{{Name: source.Bare("draft"), GoName: "Draft"}, {Name: source.Bare("published"), GoName: "Published"}},
 			},
 			{Name: source.Bare("slug"), GoName: "Slug", Column: "slug", Type: ir.FieldTypeString, Nullable: true, Unique: true, ReadOnly: true},
 			{Name: source.Bare("author"), GoName: "AuthorID", Column: "author_id", Type: ir.FieldTypeUUID, Nullable: true},

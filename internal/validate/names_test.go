@@ -85,3 +85,62 @@ func TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision(t *tes
 		}
 	}
 }
+
+// TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision is the
+// enum-value counterpart of
+// TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision: on a
+// three-way Go-identifier collision among one field's enum values, every
+// diagnostic after the first must blame the *first* declared value as
+// "prior", not whichever value the previous diagnostic just compared
+// against. Unlike the entity/relation case, three colliding enum values are
+// reachable through parse.Parse itself (buildEnumValues has no reason to
+// reject any of "in_progress", "in-progress" or "in progress" on its own),
+// so this could have been a testdata/*.yaml golden fixture instead -- it is
+// a direct unit test purely to keep the two "KeepsFirstPrior" regressions
+// next to each other and in the same style.
+func TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision(t *testing.T) {
+	e := &ir.Entity{
+		Name: "task",
+		Fields: []*ir.Field{
+			{
+				Name: source.Bare("state"), Type: ir.FieldTypeEnum, EnumGoType: "TaskState",
+				EnumValues: []ir.EnumValue{
+					{Name: source.NewAt("in_progress", source.Pos{Line: 5, Column: 39}, source.Pos{Line: 5, Column: 50}), GoName: "InProgress"},
+					{Name: source.NewAt("in-progress", source.Pos{Line: 5, Column: 52}, source.Pos{Line: 5, Column: 63}), GoName: "InProgress"},
+					{Name: source.NewAt("in progress", source.Pos{Line: 5, Column: 65}, source.Pos{Line: 5, Column: 76}), GoName: "InProgress"},
+				},
+			},
+		},
+	}
+
+	var diags diag.Diagnostics
+	validateEnumValueNames(e, "lapigo.yaml", &diags)
+
+	want := diag.Diagnostics{
+		{
+			Severity:  diag.Error,
+			File:      "lapigo.yaml",
+			Pos:       source.Pos{Line: 5, Column: 52},
+			EndColumn: 63,
+			Message:   `enum value "in_progress" and "in-progress" of field "state" of entity "task" both produce Go identifier "InProgress"`,
+			Hint:      "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
+		},
+		{
+			Severity:  diag.Error,
+			File:      "lapigo.yaml",
+			Pos:       source.Pos{Line: 5, Column: 65},
+			EndColumn: 76,
+			Message:   `enum value "in_progress" and "in progress" of field "state" of entity "task" both produce Go identifier "InProgress"`,
+			Hint:      "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
+		},
+	}
+
+	if len(diags) != len(want) {
+		t.Fatalf("len(diags) = %d, want %d: %+v", len(diags), len(want), diags)
+	}
+	for i := range want {
+		if diags[i] != want[i] {
+			t.Errorf("diags[%d] =\n%+v\nwant:\n%+v", i, diags[i], want[i])
+		}
+	}
+}

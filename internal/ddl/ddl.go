@@ -129,7 +129,7 @@ func (em *emitter) table(e *ir.Entity) {
 			if i > 0 {
 				em.b.WriteString(", ")
 			}
-			em.b.WriteString(quoteSQL(v.Value))
+			em.b.WriteString(quoteSQL(v.Name.Value))
 		}
 		em.b.WriteString("))")
 	}

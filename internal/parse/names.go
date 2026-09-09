@@ -3,6 +3,7 @@ package parse
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/cdhdt/lapigo/internal/source"
 )
@@ -87,25 +88,39 @@ var goInitialisms = map[string]string{
 }
 
 // goName converts a schema identifier (a snake_case entity, field, or
-// relation name) into an exported Go identifier: each underscore-delimited
-// segment is capitalized, with the initialisms in goInitialisms rendered
-// fully upper-case.
+// relation name) or an enum value into an exported Go identifier: each run
+// of consecutive characters that are neither a Unicode letter nor a Unicode
+// digit is a segment boundary, and each segment is capitalized, with the
+// initialisms in goInitialisms rendered fully upper-case.
+//
+// The boundary rule is deliberately wider than "_": a field, entity or
+// relation name is already restricted to letters, digits and "_" by
+// requireIdentifier before it ever reaches goName, so for those callers this
+// is equivalent to splitting on "_" alone. An enum value (ir.EnumValue.GoName)
+// is never passed through requireIdentifier -- buildEnumValues accepts any
+// non-empty, control-character-free string -- so it can contain "-", " ", "."
+// or any other punctuation a schema author writes. Treating only "_" as a
+// boundary there would let "in-progress" and "in_progress" produce two
+// different, and differently broken, results (an invalid identifier
+// containing a hyphen, versus a valid one) instead of colliding on the same
+// identifier the way spec §5.6's own example (user_id/userId -> UserID)
+// says they must (issue #24).
 //
 // This is a naming *convention*, not a validated identifier. Rejecting a
 // name that does not survive export cleanly (a leading digit, a Go keyword,
-// a collision with another exported name) is the validator's job (spec
-// §5.6, step 3 of the pipeline) -- deliberately out of this package's scope,
-// which resolves structure, not policy.
+// a collision with another exported name, or -- for an enum value -- a
+// value with no letters or digits at all, which produces the empty string
+// here) is the validator's or resolver's job, not goName's own -- see
+// requireExportableName and buildEnumValues' own empty-GoName check.
 func goName(s string) string {
 	if s == "" {
 		return ""
 	}
-	segments := strings.Split(s, "_")
+	segments := strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 	var b strings.Builder
 	for _, seg := range segments {
-		if seg == "" {
-			continue
-		}
 		if up, ok := goInitialisms[strings.ToLower(seg)]; ok {
 			b.WriteString(up)
 			continue

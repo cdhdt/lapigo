@@ -27,7 +27,7 @@ func TestSchema_Compose(t *testing.T) {
 	articleID := &Field{Name: source.Bare("id"), GoName: "ID", Column: "id", Type: FieldTypeUUID, PK: true}
 	status := &Field{
 		Name: source.Bare("status"), GoName: "Status", Column: "status", Type: FieldTypeEnum, EnumGoType: "ArticleStatus",
-		EnumValues: []source.At[string]{source.Bare("draft"), source.Bare("published")},
+		EnumValues: []EnumValue{{Name: source.Bare("draft"), GoName: "Draft"}, {Name: source.Bare("published"), GoName: "Published"}},
 	}
 	createdAt := &Field{Name: source.Bare("created_at"), GoName: "CreatedAt", Column: "created_at", Type: FieldTypeTimestamp, Immutable: true}
 

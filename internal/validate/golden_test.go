@@ -127,6 +127,15 @@ var goldenCases = []string{
 	// bypasses parse.Parse to reach a state parse.Parse itself would refuse
 	// to construct.
 	"entity_triple_collision",
+
+	// enum_value_collision is issue #24's own fixture: two values of the
+	// same enum field ("in-progress" and "in_progress") whose computed Go
+	// identifiers collide on "InProgress". Before this fixture existed
+	// (and before ir.Field.EnumValues carried a computed GoName at all),
+	// this schema parsed and validated with zero diagnostics and would
+	// have reached the generator as two colliding constant declarations --
+	// exactly the defect spec §5.6 says must be rejected, never mangled.
+	"enum_value_collision",
 }
 
 // successFixtures are the .yaml files under testdata/ that both
@@ -160,6 +169,14 @@ var successFixtures = map[string]bool{
 	// nullable_set_null is the success counterpart of set_null_on_required:
 	// an optional relation may null out when its target is deleted.
 	"nullable_set_null": true,
+
+	// enum_value_same_raw_across_fields is the success counterpart of
+	// enum_value_collision: validateEnumValueNames is scoped to one field's
+	// own EnumValues, so two different enum fields (even the same field name
+	// on two different entities) reusing the exact same raw value strings
+	// must not be reported as colliding with each other -- only two values
+	// *within* the same field's own list can ever collide.
+	"enum_value_same_raw_across_fields": true,
 }
 
 // TestValidate_NoOrphanFixtures fails when a testdata/*.yaml file is

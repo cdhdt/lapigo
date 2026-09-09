@@ -1,0 +1,4 @@
+lapigo.yaml:5:50: enum value "in-progress" and "in_progress" of field "state" of entity "task" both produce Go identifier "InProgress"
+   5 |       state: { type: enum, values: [in-progress, in_progress], required: true }
+     |                                                  ^^^^^^^^^^^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)

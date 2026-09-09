@@ -233,11 +233,13 @@ func (r *resolver) buildField(name source.At[string], entityGoName string, body 
 // vocabulary into ir's.
 func fieldTypeName(t ir.FieldType) string { return t.String() }
 
-// buildEnumValues resolves a `values:` sequence into the At[string] slice
+// buildEnumValues resolves a `values:` sequence into the []ir.EnumValue
 // ir.Field.EnumValues holds, reporting a diagnostic for any element that is
-// not a plain string, that is empty, or that contains a control character.
+// not a plain string, that is empty, that contains a control character, or
+// whose computed Go identifier (goName, the same function used for every
+// other identifier in the schema) is empty.
 //
-// The syntax rules are not cosmetic: every enum value is emitted into the
+// The syntax rules are not cosmetic. Every enum value is emitted into the
 // CHECK constraint's SQL string literal by the DDL emitter, and a value
 // containing a control character either breaks the literal outright (Postgres
 // rejects NUL in any string literal) or buries one in a migration nobody can
@@ -245,12 +247,22 @@ func fieldTypeName(t ir.FieldType) string { return t.String() }
 // constant could ever carry. Rejecting both here, at the value's own
 // position, is what makes the DDL emitter's quoting total rather than
 // "total except for inputs the parser let through".
-func (r *resolver) buildEnumValues(n ast.Node, fieldName string) []source.At[string] {
+//
+// The empty-Go-identifier check is the enum-value counterpart of
+// requireExportableName: a value like "---" is legal by the rules above (it
+// is non-empty and holds no control character) but has no letter or digit
+// for goName to capitalize, and would otherwise reach the generator as an
+// enum constant with no name at all (spec §5.6, issue #24). Collisions
+// *between* two values that do each produce a name -- "in-progress" and
+// "in_progress" both yielding "InProgress" -- are not this function's job:
+// they need the whole field's value list to detect, and are reported by
+// internal/validate's validateEnumValueNames instead.
+func (r *resolver) buildEnumValues(n ast.Node, fieldName string) []ir.EnumValue {
 	seq, ok := r.requireSequence(n, fieldContext(fieldName)+" `values`")
 	if !ok {
 		return nil
 	}
-	out := make([]source.At[string], 0, len(seq.Values))
+	out := make([]ir.EnumValue, 0, len(seq.Values))
 	for _, v := range seq.Values {
 		s, ok := r.requireString(v, fieldContext(fieldName)+" `values` entry")
 		if !ok {
@@ -268,7 +280,13 @@ func (r *resolver) buildEnumValues(n ast.Node, fieldName string) []source.At[str
 				fieldName, s.Value[pos:pos+1], pos)
 			continue
 		}
-		out = append(out, at)
+		gn := goName(s.Value)
+		if gn == "" {
+			r.addAt(at, "add at least one letter or digit; an enum value with no letters or digits has no exportable Go name",
+				"field %q has an enum value %q with no exportable Go name", fieldName, s.Value)
+			continue
+		}
+		out = append(out, ir.EnumValue{Name: at, GoName: gn})
 	}
 	return out
 }

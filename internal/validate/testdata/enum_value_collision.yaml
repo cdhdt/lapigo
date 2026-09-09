@@ -1,0 +1,5 @@
+entities:
+  task:
+    fields:
+      id:    { type: uuid, pk: true }
+      state: { type: enum, values: [in-progress, in_progress], required: true }

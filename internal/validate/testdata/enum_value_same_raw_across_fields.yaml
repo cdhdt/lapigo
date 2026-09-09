@@ -1,0 +1,9 @@
+entities:
+  article:
+    fields:
+      id:     { type: uuid, pk: true }
+      status: { type: enum, values: [draft, published], required: true }
+  task:
+    fields:
+      id:     { type: uuid, pk: true }
+      status: { type: enum, values: [draft, published], required: true }

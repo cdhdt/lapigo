@@ -290,6 +290,28 @@ func TestSchema_Freeze_RelationTargetNotInSchema(t *testing.T) {
 // *ir.Schema, or a resolver with a bug reintroduced later), matching the
 // same "invariants live in code, not in comments" standard already applied
 // to PK, Sort, Filter and Relation-membership above.
+// TestSchema_Freeze_EnumValueWithNoExportableGoName is the defense-in-depth
+// counterpart of internal/parse's buildEnumValues' own empty-Go-name check
+// (issue #24): a resolver bug -- or a hand-built Schema, as here -- that
+// leaves an EnumValue.GoName empty must not reach validateEnumValueNames
+// (internal/validate/names.go), which compares GoName values against each
+// other and would otherwise treat two independently-nameless values as
+// colliding with each other on "" instead of each being individually
+// invalid.
+func TestSchema_Freeze_EnumValueWithNoExportableGoName(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	status := &Field{
+		Name: source.Bare("status"), Type: FieldTypeEnum, EnumGoType: "WidgetStatus",
+		EnumValues: []EnumValue{{Name: source.Bare("draft"), GoName: "Draft"}, {Name: source.Bare("---"), GoName: ""}},
+	}
+	e := &Entity{Name: "widget", Fields: []*Field{id, status}, PK: id}
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err == nil {
+		t.Fatal("Freeze() = nil, want an error: enum value has no exportable Go name")
+	}
+}
+
 func TestSchema_Freeze_RelationTargetSpanIsZero(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
 	targetID := &Field{Name: source.Bare("id"), PK: true}

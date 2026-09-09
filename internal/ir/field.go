@@ -37,8 +37,26 @@ type Field struct {
 	// name, which is why GoType special-cases FieldTypeEnum instead of
 	// delegating to FieldType.GoType for it.
 	EnumGoType string
-	EnumValues []source.At[string]
+	EnumValues []EnumValue
 	Default    *DefaultValue
+}
+
+// EnumValue is one member of an enum field's `values:` list (spec §3.1),
+// paired with the exported Go identifier the generator will emit for it
+// (e.g. "InProgress" for "in_progress").
+//
+// GoName exists on the element, not computed on demand from Name.Value,
+// for the same reason Field.GoName and Entity.GoName are stored fields
+// rather than methods: it is what the collision checks in
+// internal/validate/names.go compare against, and computing it twice --
+// once here, once in the validator -- is exactly the kind of duplicated
+// policy CLAUDE.md's "templates never see raw YAML" boundary exists to rule
+// out. internal/parse computes it with the same goName function used for
+// every other identifier in the schema (see internal/parse/names.go's
+// goName), not a second casing function of its own.
+type EnumValue struct {
+	Name   source.At[string]
+	GoName string
 }
 
 // GoType returns f's Go type, per spec §3.2. It defers to FieldType.GoType
