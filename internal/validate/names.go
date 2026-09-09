@@ -135,66 +135,43 @@ func validateEntityStructNames(e *ir.Entity, file string, diags *diag.Diagnostic
 	}
 }
 
-// validateEnumValueNames reports spec §5.6's enum-value collision: two
-// members of the same field's `values:` list whose computed Go identifier
-// (ir.EnumValue.GoName) collides -- "in-progress" and "in_progress" both
-// producing "InProgress" is issue #24's own worked example. Scoped to one
-// field at a time, unlike validatePackageNames below: an enum field's
-// generated constants live under that field's own EnumGoType and are never
-// mixed with another field's, so two values can only ever collide with each
-// other when they belong to the same field.
+// packageDecl is one top-level Go declaration the generated model package
+// will emit for the whole schema: an entity's own struct, one enum field's
+// generated enum type (Field.EnumGoType), or one enum value's generated
+// constant (Field.EnumGoType + EnumValue.GoName).
 //
-// Follows validateEntityStructNames' own shape exactly: a `seen` map keyed
-// by the collided identifier, populated only on the first sighting so every
-// subsequent diagnostic blames the *first* declared value as "prior" (see
-// TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision for
-// why that matters on three or more colliding values).
-func validateEnumValueNames(e *ir.Entity, file string, diags *diag.Diagnostics) {
-	for _, f := range e.Fields {
-		if f.Type != ir.FieldTypeEnum {
-			continue
-		}
-		seen := make(map[string]ir.EnumValue, len(f.EnumValues))
-		for _, v := range f.EnumValues {
-			prior, ok := seen[v.GoName]
-			if !ok {
-				seen[v.GoName] = v
-				continue
-			}
-			diags.Add(diag.Diagnostic{
-				Severity:  diag.Error,
-				File:      file,
-				Pos:       v.Name.Pos,
-				EndColumn: v.Name.End.Column,
-				Message: fmt.Sprintf("enum value %q and %q of field %q of entity %q both produce Go identifier %q",
-					prior.Name.Value, v.Name.Value, f.Name.Value, e.Name, v.GoName),
-				Hint: "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
-			})
-		}
-	}
-}
-
-// packageDecl is one top-level Go type name the generated model package will
-// declare for the whole schema: an entity's own struct, or one enum field's
-// generated enum type (Field.EnumGoType).
+// The constant case is why this cannot be scoped any narrower than the whole
+// package (review finding F1 on PR #39, issue #24): an earlier revision kept
+// a separate, per-field-only check for enum-value collisions, justified by
+// the claim that "an enum field's generated constants live under that
+// field's own EnumGoType and are never mixed with another field's". That
+// claim is false. A constant's name is EnumGoType + GoName, and EnumGoType
+// is itself entityGoName + goName(fieldName) (internal/parse/field.go) --
+// concatenating two variable-length prefixes is ambiguous, so two different
+// fields' constants collide freely: field "state" with value "x_y" produces
+// "Task"+"State"+"XY", and field "state_x" with value "y" produces
+// "Task"+"StateX"+"Y" -- the same "TaskStateXY". Only comparing every
+// constant against every other top-level declaration in the same flat
+// namespace -- entities, enum types, and now enum constants together --
+// catches that, a constant colliding with another field's enum type name, or
+// a constant colliding with an entity's own struct name, uniformly with the
+// within-field case ("in-progress"/"in_progress", issue #24's own example).
 //
 // Collected across every entity in schema.Entities -- sorted by name, an
 // invariant ir.Schema.Freeze already checked before this package ever runs,
-// never a map -- so a collision between two entities, two enum types, or an
-// entity and an enum type (all of which, living in the one model package
-// spec §6.1 describes, would be two conflicting top-level type declarations)
-// is caught regardless of which entities produced them.
+// never a map -- so a collision is caught regardless of which entities or
+// fields produced the two colliding declarations.
 type packageDecl struct {
 	goName   string
-	kind     string // "entity" or "enum type"
+	kind     string // "entity", "enum type", or "enum value"
 	label    string
 	pos, end source.Pos
 }
 
-// schemaPackageDecls returns one packageDecl per entity plus one per enum
-// field, in schema.Entities order (Fields within an entity walked in
-// declaration order) -- deterministic for a given schema, since neither loop
-// ranges a map.
+// schemaPackageDecls returns one packageDecl per entity, one per enum field,
+// and one per enum value, in schema.Entities order (Fields within an entity,
+// and EnumValues within a field, walked in declaration order) --
+// deterministic for a given schema, since no loop here ranges a map.
 func schemaPackageDecls(schema *ir.Schema) []packageDecl {
 	var decls []packageDecl
 	for _, e := range schema.Entities {
@@ -213,14 +190,25 @@ func schemaPackageDecls(schema *ir.Schema) []packageDecl {
 				pos:    f.Name.Pos,
 				end:    f.Name.End,
 			})
+			for _, v := range f.EnumValues {
+				decls = append(decls, packageDecl{
+					goName: f.EnumGoType + v.GoName,
+					kind:   "enum value",
+					label:  e.Name + "." + f.Name.Value + "." + v.Name.Value,
+					pos:    v.Name.Pos,
+					end:    v.Name.End,
+				})
+			}
 		}
 	}
 	return decls
 }
 
 // validatePackageNames reports spec §5.6's package-wide collisions: two
-// entities whose Go names collide, and an enum field's generated type name
-// colliding with another entity's or another enum field's.
+// entities, two enum types, two enum constants, or any mix of the three,
+// whose generated Go identifier collides -- see packageDecl's own doc
+// comment for why an enum constant cannot be checked against anything
+// narrower than this whole-package namespace.
 func validatePackageNames(schema *ir.Schema, file string, diags *diag.Diagnostics) {
 	decls := schemaPackageDecls(schema)
 	seen := make(map[string]packageDecl, len(decls))

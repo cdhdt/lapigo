@@ -1,0 +1,4 @@
+lapigo.yaml:6:39: enum value "task.state.x_y" and enum value "task.state_x.y" both produce Go identifier "TaskStateXY"
+   6 |       state_x: { type: enum, values: [y] }
+     |                                       ^
+   rename one of them so their generated Go identifiers don't collide (spec §5.6)

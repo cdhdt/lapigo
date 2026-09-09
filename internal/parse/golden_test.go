@@ -61,6 +61,18 @@ var goldenCases = []string{
 	"indexes_filters_empty",
 	"enum_empty_value",
 	"enum_control_char_value",
+
+	// enum_unexportable_value pins the full rendered output of
+	// buildEnumValues' empty-Go-identifier check (issue #24, review finding
+	// F4 on PR #39): "---" is legal by enum_empty_value's and
+	// enum_control_char_value's own rules (non-empty, no control character)
+	// but every character is a separator, so goName has nothing left to
+	// capitalize. TestBuildEnumValues_UnexportableValueIsDiagnostic
+	// (coverage_test.go) already pins the Message text alone; this fixture
+	// is this rule's sibling-style golden test, exact like its two
+	// neighbours above -- a mutant that corrupts only the Hint (e.g. to
+	// "BOGUS") survives the message-only unit test but fails this one.
+	"enum_unexportable_value",
 	"identifier_too_long",
 }
 

@@ -52,7 +52,6 @@ func Validate(schema *ir.Schema, file string) diag.Diagnostics {
 		validateIndexes(e, file, &diags)
 		validateRelations(e, file, &diags)
 		validateEntityStructNames(e, file, &diags)
-		validateEnumValueNames(e, file, &diags)
 	}
 	validatePackageNames(schema, file, &diags)
 	return diags

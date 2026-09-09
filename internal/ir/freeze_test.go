@@ -278,22 +278,10 @@ func TestSchema_Freeze_RelationTargetNotInSchema(t *testing.T) {
 	}
 }
 
-// TestSchema_Freeze_RelationTargetSpanIsZero is the regression test for spec
-// §2.2's invariant: "every Relation that exists carries a valid TargetSpan."
-// A Relation is only ever meant to be appended once its `target:` has been
-// read *and* resolved -- see internal/parse/relation.go's
-// resolvePendingRelation, which returns before appending a Relation whenever
-// targetName is empty, and buildRelationField's own "target" case, which
-// only ever sets targetName from a real, non-empty string token. A Relation
-// with a zero TargetSpan is therefore not a value any correct resolver can
-// produce; Freeze is the last gate that can catch one anyway (a hand-built
-// *ir.Schema, or a resolver with a bug reintroduced later), matching the
-// same "invariants live in code, not in comments" standard already applied
-// to PK, Sort, Filter and Relation-membership above.
 // TestSchema_Freeze_EnumValueWithNoExportableGoName is the defense-in-depth
 // counterpart of internal/parse's buildEnumValues' own empty-Go-name check
 // (issue #24): a resolver bug -- or a hand-built Schema, as here -- that
-// leaves an EnumValue.GoName empty must not reach validateEnumValueNames
+// leaves an EnumValue.GoName empty must not reach validatePackageNames
 // (internal/validate/names.go), which compares GoName values against each
 // other and would otherwise treat two independently-nameless values as
 // colliding with each other on "" instead of each being individually
@@ -312,6 +300,18 @@ func TestSchema_Freeze_EnumValueWithNoExportableGoName(t *testing.T) {
 	}
 }
 
+// TestSchema_Freeze_RelationTargetSpanIsZero is the regression test for spec
+// §2.2's invariant: "every Relation that exists carries a valid TargetSpan."
+// A Relation is only ever meant to be appended once its `target:` has been
+// read *and* resolved -- see internal/parse/relation.go's
+// resolvePendingRelation, which returns before appending a Relation whenever
+// targetName is empty, and buildRelationField's own "target" case, which
+// only ever sets targetName from a real, non-empty string token. A Relation
+// with a zero TargetSpan is therefore not a value any correct resolver can
+// produce; Freeze is the last gate that can catch one anyway (a hand-built
+// *ir.Schema, or a resolver with a bug reintroduced later), matching the
+// same "invariants live in code, not in comments" standard already applied
+// to PK, Sort, Filter and Relation-membership above.
 func TestSchema_Freeze_RelationTargetSpanIsZero(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
 	targetID := &Field{Name: source.Bare("id"), PK: true}

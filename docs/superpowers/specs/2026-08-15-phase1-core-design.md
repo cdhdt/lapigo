@@ -118,8 +118,16 @@ type Field struct {
     Version    bool              // optimistic concurrency column
     Max        *int              // string length constraint
     EnumGoType string            // set only for FieldTypeEnum, e.g. "ArticleStatus"
-    EnumValues []source.At[string]
+    EnumValues []EnumValue
     Default    *DefaultValue
+}
+
+// One member of an enum field's `values:` list, paired with the exported Go
+// identifier the generator emits for it (e.g. "InProgress" for "in_progress"),
+// so §5.6's collision check has a real identifier to compare (§13, 2026-09-09).
+type EnumValue struct {
+    Name   source.At[string]      // as written
+    GoName string
 }
 
 // Derived, never stored. See below.
@@ -1147,3 +1155,6 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-08-22 | §3.1 (parse rules) | Identifiers are rejected above Postgres's 63-byte limit; enum values must be non-empty and free of control characters | Postgres would silently truncate a longer identifier, leaving generated code and database disagreeing; a control character in an enum value cannot be emitted into the migration's CHECK literal (Postgres rejects NUL outright). |
 | 2026-08-22 | §3.1 (validation) | `on_delete: set_null` is rejected on a relation that is not nullable | The DDL emits the clause as asked; NOT NULL plus ON DELETE SET NULL applies cleanly and then fails on every delete of a referenced row — a runtime 500 generated from a schema that validated clean. |
 | 2026-08-22 | §8 | The DDL test tier applies every golden fixture to a real Postgres via `LAPIGO_TEST_DATABASE_URL`, each into a fresh schema; it skips only outside CI (an unset variable in CI fails the build, so a pipeline that has lost its database goes red instead of silently green); pgx v5 enters the generator's go.mod as a test-only dependency | Review of step 4 against a live database: CI has provisioned a Postgres and exported the variable since the first pipeline, and nothing in the repository read it — "applies cleanly" was established by hand once, and nothing re-established it. The CI guard answers the follow-up: a skip prints nothing without `-v`, so the tier must fail where a database was promised. pgx is the project's chosen driver (§2.3); executing psql instead would trade a declared module dependency for an undeclared environment one. |
+| 2026-09-09 | §2.2 | `Field.EnumValues` is `[]EnumValue{Name, GoName}`, not `[]source.At[string]` | Issue #24: nothing computed an enum value's Go identifier, so `values: [in-progress, in_progress]` — two values that case-convert to the same generator constant — validated clean and would have produced uncompilable code. §5.6's collision check needs a real identifier per value to compare. |
+| 2026-09-09 | §3.1 (parse rules) | An enum value whose computed Go identifier is empty (e.g. `"---"`, every character a separator) is rejected, alongside the existing non-empty/no-control-character rules | The enum-value counterpart of the field-name check below: `"---"` is legal enum-value text by the existing rules but names nothing a generated constant could carry. |
+| 2026-09-09 | §5.6 | The package-wide collision check compares every generated top-level declaration together — entity structs, enum types, *and* one enum constant (`EnumGoType + EnumValue.GoName`) per value — not enum types and entity structs alone; a name already rejected by the identifier grammar (leading digit aside) is excluded from this comparison rather than compared using its Go name anyway | An enum constant's name concatenates two variable-length prefixes (`entityGoName + goName(fieldName) + goName(value)`), which is ambiguous: field `state` value `x_y` and field `state_x` value `y` both produce `TaskStateXY`. Checking only entity and enum-*type* names (as a first pass at this issue did) missed that, and every within-field, cross-field, type-vs-constant, and constant-vs-entity-struct pairing besides (PR #39 review finding F1). Comparing an already-invalid name's mangled Go form against a valid sibling's produced a second diagnostic blaming the valid one for the invalid one's own defect (PR #39 review finding F2); excluding it entirely is more useful than merely correcting the message, since the invalid name already has its own diagnostic. |

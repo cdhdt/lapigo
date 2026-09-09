@@ -255,8 +255,10 @@ func fieldTypeName(t ir.FieldType) string { return t.String() }
 // enum constant with no name at all (spec §5.6, issue #24). Collisions
 // *between* two values that do each produce a name -- "in-progress" and
 // "in_progress" both yielding "InProgress" -- are not this function's job:
-// they need the whole field's value list to detect, and are reported by
-// internal/validate's validateEnumValueNames instead.
+// they need the whole schema's set of generated declarations to detect
+// (a collision can reach across fields and entities, not just within one
+// field's own list -- see internal/validate/names.go's packageDecl), and
+// are reported by internal/validate's validatePackageNames instead.
 func (r *resolver) buildEnumValues(n ast.Node, fieldName string) []ir.EnumValue {
 	seq, ok := r.requireSequence(n, fieldContext(fieldName)+" `values`")
 	if !ok {

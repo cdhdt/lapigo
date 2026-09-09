@@ -94,17 +94,25 @@ var goInitialisms = map[string]string{
 // initialisms in goInitialisms rendered fully upper-case.
 //
 // The boundary rule is deliberately wider than "_": a field, entity or
-// relation name is already restricted to letters, digits and "_" by
-// requireIdentifier before it ever reaches goName, so for those callers this
-// is equivalent to splitting on "_" alone. An enum value (ir.EnumValue.GoName)
-// is never passed through requireIdentifier -- buildEnumValues accepts any
-// non-empty, control-character-free string -- so it can contain "-", " ", "."
-// or any other punctuation a schema author writes. Treating only "_" as a
-// boundary there would let "in-progress" and "in_progress" produce two
-// different, and differently broken, results (an invalid identifier
-// containing a hyphen, versus a valid one) instead of colliding on the same
-// identifier the way spec §5.6's own example (user_id/userId -> UserID)
-// says they must (issue #24).
+// relation name is *meant* to be restricted to letters, digits and "_" by
+// requireIdentifier before it ever reaches goName -- and for a name that
+// actually satisfies that restriction, splitting on "any non-alphanumeric
+// rune" is equivalent to splitting on "_" alone, so this change is
+// behavior-preserving for every valid name. It is not a guard, though:
+// requireIdentifier's callers (buildEntity, buildField,
+// buildRelationField) all discard its returned bool, so an invalid name
+// still gets a GoName computed here, just one nothing downstream should
+// trust -- checkFieldCollisions (internal/parse/entity.go) is careful to
+// exclude such a name from its own GoName-collision check for exactly this
+// reason (review finding F2 on PR #39). An enum value (ir.EnumValue.GoName)
+// is never passed through requireIdentifier at all -- buildEnumValues
+// accepts any non-empty, control-character-free string -- so it can contain
+// "-", " ", "." or any other punctuation a schema author writes. Treating
+// only "_" as a boundary there would let "in-progress" and "in_progress"
+// produce two different, and differently broken, results (an invalid
+// identifier containing a hyphen, versus a valid one) instead of colliding
+// on the same identifier the way spec §5.6's own example
+// (user_id/userId -> UserID) says they must (issue #24).
 //
 // This is a naming *convention*, not a validated identifier. Rejecting a
 // name that does not survive export cleanly (a leading digit, a Go keyword,

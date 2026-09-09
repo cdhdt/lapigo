@@ -189,6 +189,22 @@ func (r *resolver) buildFieldsAndRelations(e *ir.Entity, node ast.Node) ([]*ir.F
 // only field with that Name. The DDL emitter would emit "author_id" twice
 // and the generated struct would declare "AuthorID" twice; neither
 // compiles.
+//
+// A field (or a belongsTo relation's own name) whose Name already fails
+// requireIdentifier is excluded from the GoName comparison, both as a
+// candidate "prior" and as a value compared against one (review finding F2
+// on PR #39). requireExportableName reports its own diagnostic for such a
+// name but does not stop buildField/buildRelationField from still calling
+// goName on it -- every call site discards the returned bool -- so an
+// already-rejected name like "a-b" still gets a GoName computed from it
+// ("AB", once goName's separator rule was widened past "_" for issue #24).
+// Comparing that mangled value against a validly-named sibling field's
+// GoName ("a_b" -> "AB") produced a second diagnostic that blamed the
+// *valid* field for a collision that exists only because the invalid one
+// was mangled past a check it had already failed -- confusing, and exactly
+// what CLAUDE.md's "compiler-grade error messages" rule exists to prevent.
+// The invalid name already has its own "not a valid identifier" diagnostic;
+// it does not also need a GoName-collision one, accurate or not.
 func (r *resolver) checkFieldCollisions(e *ir.Entity) {
 	byColumn := make(map[string]*ir.Field, len(e.Fields))
 	byGoName := make(map[string]*ir.Field, len(e.Fields))
@@ -198,6 +214,9 @@ func (r *resolver) checkFieldCollisions(e *ir.Entity) {
 				"field %q and field %q both use column %q", f.Name.Value, prior.Name.Value, f.Column)
 		} else {
 			byColumn[f.Column] = f
+		}
+		if !identifierPattern.MatchString(f.Name.Value) {
+			continue
 		}
 		if prior, ok := byGoName[f.GoName]; ok {
 			r.addAt(f.Name, "rename one field so their Go names don't collide (spec §5.6)",

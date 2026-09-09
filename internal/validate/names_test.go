@@ -86,21 +86,23 @@ func TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision(t *tes
 	}
 }
 
-// TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision is the
-// enum-value counterpart of
-// TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision: on a
-// three-way Go-identifier collision among one field's enum values, every
-// diagnostic after the first must blame the *first* declared value as
-// "prior", not whichever value the previous diagnostic just compared
-// against. Unlike the entity/relation case, three colliding enum values are
+// TestValidatePackageNames_KeepsFirstPriorAcrossThreeWayEnumValueCollision is
+// the enum-value counterpart of
+// TestValidateEntityStructNames_KeepsFirstPriorAcrossThreeWayCollision,
+// exercising schemaPackageDecls' enum-constant decls (packageDecl's own doc
+// comment, review finding F1 on PR #39): on a three-way Go-identifier
+// collision among one field's enum values, every diagnostic after the first
+// must blame the *first* declared value as "prior", not whichever value the
+// previous diagnostic just compared against. Three colliding enum values are
 // reachable through parse.Parse itself (buildEnumValues has no reason to
 // reject any of "in_progress", "in-progress" or "in progress" on its own),
 // so this could have been a testdata/*.yaml golden fixture instead -- it is
 // a direct unit test purely to keep the two "KeepsFirstPrior" regressions
 // next to each other and in the same style.
-func TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision(t *testing.T) {
+func TestValidatePackageNames_KeepsFirstPriorAcrossThreeWayEnumValueCollision(t *testing.T) {
 	e := &ir.Entity{
-		Name: "task",
+		Name:   "task",
+		GoName: "Task",
 		Fields: []*ir.Field{
 			{
 				Name: source.Bare("state"), Type: ir.FieldTypeEnum, EnumGoType: "TaskState",
@@ -112,9 +114,10 @@ func TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision(t *testin
 			},
 		},
 	}
+	schema := &ir.Schema{Entities: []*ir.Entity{e}}
 
 	var diags diag.Diagnostics
-	validateEnumValueNames(e, "lapigo.yaml", &diags)
+	validatePackageNames(schema, "lapigo.yaml", &diags)
 
 	want := diag.Diagnostics{
 		{
@@ -122,7 +125,7 @@ func TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision(t *testin
 			File:      "lapigo.yaml",
 			Pos:       source.Pos{Line: 5, Column: 52},
 			EndColumn: 63,
-			Message:   `enum value "in_progress" and "in-progress" of field "state" of entity "task" both produce Go identifier "InProgress"`,
+			Message:   `enum value "task.state.in_progress" and enum value "task.state.in-progress" both produce Go identifier "TaskStateInProgress"`,
 			Hint:      "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
 		},
 		{
@@ -130,7 +133,7 @@ func TestValidateEnumValueNames_KeepsFirstPriorAcrossThreeWayCollision(t *testin
 			File:      "lapigo.yaml",
 			Pos:       source.Pos{Line: 5, Column: 65},
 			EndColumn: 76,
-			Message:   `enum value "in_progress" and "in progress" of field "state" of entity "task" both produce Go identifier "InProgress"`,
+			Message:   `enum value "task.state.in_progress" and enum value "task.state.in progress" both produce Go identifier "TaskStateInProgress"`,
 			Hint:      "rename one of them so their generated Go identifiers don't collide (spec §5.6)",
 		},
 	}
