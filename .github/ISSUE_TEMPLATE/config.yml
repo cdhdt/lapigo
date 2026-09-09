@@ -1,0 +1,12 @@
+# Blank issues are disabled deliberately: the project's process requires
+# every task issue to carry a Journal section (context, done, remaining,
+# decided), and a blank issue has nowhere for that to live. Use the Task or
+# Bug report form; if truly neither fits, adapt the Task form rather than
+# dropping to a blank issue.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/cdhdt/lapigo/security/advisories/new
+    about: >-
+      Do not open a public issue for a vulnerability. Use GitHub's private
+      advisory flow instead, per SECURITY.md.

@@ -1,0 +1,83 @@
+name: Task
+description: A development task — a build order step, a decision, or recorded technical debt.
+title: "[Task]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: read `CONTRIBUTING.md` and `CLAUDE.md`. No branch starts without a ticket, and the pull request that does the work closes this one with `Closes #N`.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What is the task
+      description: What needs to be done, and why. Reference the spec section it implements or the issue it blocks, if any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: >-
+        A VERIFIABLE end state — this project's convention is that if it cannot be
+        checked by a command or an observation, it is not finished being written.
+        "The code is clean" is not verifiable; "`make check` passes" or "the golden
+        fixture in `internal/ddl/testdata/x` matches" is.
+      placeholder: |
+        e.g. `go test ./internal/validate/... -count=1` passes and includes a
+        table-driven case for this error; the diagnostic text is asserted exactly.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: criticality
+    attributes:
+      label: Criticality
+      description: >-
+        Which of the repository's review labels applies. Pick the highest that
+        fits; the maintainer applies the label(s) when triaging.
+      options:
+        - "critique — security, data, migration, or a silent guard (label: critique)"
+        - "decision — a design question that must be settled before the code it blocks (label: decision)"
+        - "dette — recorded technical debt, to close at the planned time (label: dette)"
+        - "etape — a build order step from spec §10 (label: etape)"
+        - "acceptation — a spec §11 acceptance criterion (label: acceptation)"
+        - "none of the above — routine work"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: blocked
+    attributes:
+      label: Is this blocked
+      description: >-
+        If blocked by another issue, name it in the description above and the
+        maintainer will add the `bloque` label. `bloque-humain` is for a
+        decision only a human can make — an agent never applies it to its own
+        work.
+      options:
+        - "Not blocked"
+        - "Blocked by another open issue (named above; label: bloque)"
+        - "Blocked on a human decision (label: bloque-humain)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: journal
+    attributes:
+      label: Journal
+      description: >-
+        Required by this project's process on every task issue, updated before
+        anyone hands the issue back. Keep the four questions; fill them in as
+        work happens rather than only at the end.
+      value: |
+        **Context.** Why does this issue exist — what triggered it, what does it depend on?
+
+        **Done.** What has been completed so far?
+
+        **Remaining.** What is left to do?
+
+        **Decided.** What decisions were made along the way, and why?
+    validations:
+      required: true
