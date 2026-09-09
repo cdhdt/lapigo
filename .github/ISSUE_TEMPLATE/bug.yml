@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in the generator or its generated code is wrong.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project's diagnostics (parser and validator error messages) are a
+        **public contract** — tests assert on their exact text. If this bug is
+        about a diagnostic, paste the exact rendered output verbatim, copied
+        from the terminal. A paraphrase or a summary of "it says something
+        about a missing column" cannot be turned into a regression test.
+
+        Found a security issue instead (SQL injection, mass assignment, a cache
+        leaking across users, an unbounded query)? Do not file it here — use
+        "Report a security vulnerability" from the issue template picker.
+
+  - type: input
+    id: version
+    attributes:
+      label: lapigo version or commit
+      description: Output of `lapigo version`, or the commit hash if built from source.
+      placeholder: e.g. 1f8215d
+    validations:
+      required: true
+
+  - type: textarea
+    id: schema
+    attributes:
+      label: Minimal lapigo.yaml that reproduces it
+      description: The smallest schema that still triggers the problem.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command run
+      placeholder: e.g. lapigo gen
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+      description: >-
+        What should have been printed or generated. If a diagnostic is
+        involved, give the exact expected text, not a description of it.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      description: >-
+        Paste the exact output verbatim — the full terminal output for a
+        diagnostic, or the relevant generated file content for wrong codegen.
+        Do not paraphrase.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: >-
+            The output above is copy-pasted verbatim (not retyped or
+            summarised from memory).
+          required: true
