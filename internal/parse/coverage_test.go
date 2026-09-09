@@ -189,6 +189,21 @@ func TestBuildEnumValues_NonStringEntryIsDiagnostic(t *testing.T) {
 	}
 }
 
+// TestBuildEnumValues_UnexportableValueIsDiagnostic is the enum-value
+// counterpart of TestFieldIdentifier_UnderscoreOnlyNameHasNoExportableGoName
+// (identifiers_test.go): "---" is a legal enum value under buildEnumValues'
+// own rules (non-empty, no control characters), but goName("---") is empty
+// -- every character is a separator, so nothing is left to capitalize --
+// which would otherwise reach the generator as an empty Go constant name
+// with nothing to catch it downstream (issue #24's "reject, never mangle").
+func TestBuildEnumValues_UnexportableValueIsDiagnostic(t *testing.T) {
+	msg := firstMessage(t, "entities:\n  article:\n    fields:\n      id: { type: uuid, pk: true }\n      status: { type: enum, values: [draft, \"---\"] }\n")
+	want := `field "status" has an enum value "---" with no exportable Go name`
+	if msg != want {
+		t.Fatalf("Message = %q, want %q", msg, want)
+	}
+}
+
 func TestBuildPendingFilters_NonStringEntryIsDiagnostic(t *testing.T) {
 	msg := firstMessage(t, "entities:\n  article:\n    fields:\n      id: { type: uuid, pk: true }\n    filters: [3]\n")
 	want := "entity `article` `filters` entry must be a string, found an integer"

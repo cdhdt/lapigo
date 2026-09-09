@@ -66,6 +66,13 @@ var goldenCases = []string{
 	// the later declaration's own Pos/EndColumn, so this is the only fixture
 	// that exercises the enum field's own span as the one actually rendered
 	// in a diagnostic.
+	//
+	// Since schemaPackageDecls also emits one packageDecl per enum value
+	// (packageDecl's own doc comment, review finding F1 on PR #39), the two
+	// fields' identical EnumGoType collision here also drags every one of
+	// their values into collision with each other -- "draft" against
+	// "draft", "published" against "published" -- so this fixture's .diag
+	// carries three diagnostics, not one.
 	"enum_field_collision",
 
 	// relation_method_collision is the mutation-gap regression for spec
@@ -127,6 +134,29 @@ var goldenCases = []string{
 	// bypasses parse.Parse to reach a state parse.Parse itself would refuse
 	// to construct.
 	"entity_triple_collision",
+
+	// enum_value_collision is issue #24's own fixture: two values of the
+	// same enum field ("in-progress" and "in_progress") whose computed Go
+	// identifiers collide on "InProgress". Before this fixture existed
+	// (and before ir.Field.EnumValues carried a computed GoName at all),
+	// this schema parsed and validated with zero diagnostics and would
+	// have reached the generator as two colliding constant declarations --
+	// exactly the defect spec §5.6 says must be rejected, never mangled.
+	"enum_value_collision",
+
+	// enum_constant_cross_field_collision is review finding F1 on PR #39:
+	// validateEnumValueNames' own doc comment claimed "an enum field's
+	// generated constants live under that field's own EnumGoType and are
+	// never mixed with another field's" -- false. A generated constant's
+	// name is EnumGoType + GoName, and EnumGoType is itself
+	// entityGoName + goName(fieldName) (internal/parse/field.go): field
+	// "state" with value "x_y" produces "Task"+"State"+"XY" = "TaskStateXY",
+	// and field "state_x" with value "y" produces "Task"+"StateX"+"Y" =
+	// the same "TaskStateXY". Concatenating two variable-length prefixes is
+	// ambiguous, so two different fields' constants collide freely -- this
+	// rendered zero diagnostics before schemaPackageDecls grew one
+	// packageDecl per enum constant.
+	"enum_constant_cross_field_collision",
 }
 
 // successFixtures are the .yaml files under testdata/ that both
@@ -160,6 +190,18 @@ var successFixtures = map[string]bool{
 	// nullable_set_null is the success counterpart of set_null_on_required:
 	// an optional relation may null out when its target is deleted.
 	"nullable_set_null": true,
+
+	// enum_value_same_raw_across_fields is the success counterpart of
+	// enum_value_collision and enum_constant_cross_field_collision: two
+	// enum fields named "status" on two different entities ("article" and
+	// "task"), each with the exact same raw values ([draft, published]),
+	// must not be reported as colliding with each other. Their generated
+	// constants don't collide because EnumGoType already carries the
+	// entity's own name ("ArticleStatus" vs "TaskStatus" -- see
+	// packageDecl's doc comment), not because of any per-field scoping in
+	// the check itself; validatePackageNames compares every enum constant
+	// against every other one in the whole schema.
+	"enum_value_same_raw_across_fields": true,
 }
 
 // TestValidate_NoOrphanFixtures fails when a testdata/*.yaml file is

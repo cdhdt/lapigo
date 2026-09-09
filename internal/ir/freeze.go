@@ -53,6 +53,23 @@ func (e *Entity) freeze(s *Schema) error {
 		if f.Version {
 			versionCount++
 		}
+		// Every element of Field.EnumValues is meant to carry a non-empty
+		// GoName by construction (internal/parse/field.go's buildEnumValues
+		// rejects any value whose computed identifier is empty before it is
+		// ever appended) -- this is that invariant checked, not merely
+		// asserted in EnumValue's doc comment. validatePackageNames
+		// (internal/validate/names.go) compares each value's GoName,
+		// concatenated onto its field's EnumGoType, against every other
+		// top-level declaration in the schema; an empty GoName reaching that
+		// comparison from a hand-built or buggily-resolved Schema would make
+		// two otherwise-unrelated enum values collide on the same
+		// EnumGoType+"" instead of each independently failing to have a name
+		// at all.
+		for _, v := range f.EnumValues {
+			if v.GoName == "" {
+				return fmt.Errorf("ir: entity %q field %q has an enum value %q with no exportable Go name", e.Name, f.Name.Value, v.Name.Value)
+			}
+		}
 	}
 	if pkCount != 1 {
 		return fmt.Errorf("ir: entity %q has %d fields marked PK, want exactly 1 (spec §3.1)", e.Name, pkCount)

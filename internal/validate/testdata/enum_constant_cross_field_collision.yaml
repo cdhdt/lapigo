@@ -1,0 +1,6 @@
+entities:
+  task:
+    fields:
+      id:      { type: uuid, pk: true }
+      state:   { type: enum, values: [x_y] }
+      state_x: { type: enum, values: [y] }

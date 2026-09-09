@@ -26,7 +26,7 @@ func stripPositions(s *ir.Schema) {
 		for _, f := range e.Fields {
 			f.Name.Pos, f.Name.End = source.Pos{}, source.Pos{}
 			for i := range f.EnumValues {
-				f.EnumValues[i].Pos, f.EnumValues[i].End = source.Pos{}, source.Pos{}
+				f.EnumValues[i].Name.Pos, f.EnumValues[i].Name.End = source.Pos{}, source.Pos{}
 			}
 		}
 		for i := range e.Sort.Keys {
