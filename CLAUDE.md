@@ -44,7 +44,7 @@ from revision 1 — so a change that reopens one of those needs an issue.
 | 1. `Pos`, `At[T]`, `Diagnostic`, rendering, tab rejection | done — `bba8255` |
 | 2. Parser: YAML → AST → IR with positions | done — `37893df` |
 | 3. Validator: §3.1, §3.3, §3.4, §5.6 | done — `a87b00d` |
-| 4. DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | done |
+| 4. DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | done — `4f1c8d4` |
 | 5. Template engine, formatting, determinism, staging, lock | **next** |
 | 6. Hooks interfaces and no-op implementations | not started |
 | 7. Model and input types, store, cursor encoding, keyset predicate | not started |
@@ -301,14 +301,16 @@ that violates the invariant and expects the failure.
 ## Working with subagents
 
 Implementation work in this repository is delegated to subagents by an
-orchestrating session.
+orchestrating session. See `CONTRIBUTING.md` (and `cdhdt/dev-process` for the
+long form) for the contribution cycle this sits inside — starting from an
+issue, the worktree, the draft pull request. What binds a subagent
+specifically:
 
-- **Implementation** runs on Sonnet, in an **isolated git worktree**, so
-  parallel agents cannot collide.
-- **Review** runs on Opus, on a **different agent than the one that wrote the
-  code**, and is **adversarial**: the reviewer's job is to refute the work, not
-  to bless it. Opus already self-challenges; asking it to re-verify repeatedly
-  wastes tokens without improving the result.
+- **Implementation** happens in an **isolated git worktree**, so parallel
+  agents cannot collide.
+- **Review** is **adversarial** and runs on a **different agent than the one
+  that wrote the code**: the reviewer's job is to refute the work, not to
+  bless it.
 - Each subagent gets one precise task and ends with it.
 - Subagents should use the available skills rather than improvising an approach.
 
