@@ -1,0 +1,4 @@
+lapigo.yaml:5:7: entity "article"'s version field "version" is nullable
+   5 |       version: { type: int, version: true }
+     |       ^^^^^^^
+   mark `version` `required: true`; a NULL version makes every `version = $n` comparison yield unknown, so an `If-Match` update matches zero rows and returns 409 forever (spec §3.3 rule 3's reasoning, applied to this column)

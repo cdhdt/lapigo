@@ -54,7 +54,7 @@ func TestParse_CanonicalSchema(t *testing.T) {
 				Name: source.Bare("created_at"), GoName: "CreatedAt", Column: "created_at", Type: ir.FieldTypeTimestamp,
 				Immutable: true, Default: &ir.DefaultValue{Kind: ir.DefaultNow},
 			},
-			{Name: source.Bare("version"), GoName: "Version", Column: "version", Type: ir.FieldTypeInt, Nullable: true, Version: true},
+			{Name: source.Bare("version"), GoName: "Version", Column: "version", Type: ir.FieldTypeInt, Version: true},
 		},
 		Sort: ir.SortSpec{Desc: true},
 		Endpoints: []ir.Endpoint{
