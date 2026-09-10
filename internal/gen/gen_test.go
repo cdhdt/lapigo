@@ -68,6 +68,7 @@ func TestGenerate_FileSet(t *testing.T) {
 	}
 
 	want := []string{
+		"internal/gen/model/optional.go",
 		"internal/gen/model/article.go",
 		"internal/gen/model/user.go",
 		"internal/gen/hooks/error.go",
@@ -230,9 +231,19 @@ func TestRender_TypoInARealTemplateFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
+	var article *OutputFile
+	for i := range files {
+		if files[i].Path == "internal/gen/model/article.go" {
+			article = &files[i]
+			break
+		}
+	}
+	if article == nil {
+		t.Fatalf("plan did not produce internal/gen/model/article.go: %v", files)
+	}
 
 	var buf bytes.Buffer
-	err = tmpl.ExecuteTemplate(&buf, files[0].Template, files[0].Data)
+	err = tmpl.ExecuteTemplate(&buf, article.Template, article.Data)
 	if err == nil {
 		t.Fatalf("a mistyped field selector rendered %d bytes instead of failing", buf.Len())
 	}

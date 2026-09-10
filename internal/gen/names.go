@@ -72,24 +72,42 @@ func declarationSet(s *ir.Schema) map[string][]string {
 		return byPackage
 	}
 
-	// model, as rendered by templates/model_entity.tmpl today: the entity
-	// struct, and per enum field a generated type plus one constant per
-	// declared member. Both conditional model rows (ECreateInput,
-	// EUpdateInput and their Validate methods) and model's fixed row
-	// (Optional[T]) are still pending, below.
-	var model []string
+	// model, as rendered by templates/model_entity.tmpl and
+	// templates/model_optional.tmpl: the fixed Optional[T] and its six
+	// methods (spec §6.5, §5.6's model fixed row), always present; the
+	// entity struct and, per enum field, a generated type plus one constant
+	// per declared member; and, gated on HasCreate()/HasUpdate(), the
+	// ECreateInput/EUpdateInput struct TYPES that spec §6.3's hook
+	// signatures require to exist (spec §10's amended step 6 row -- see
+	// input.go's own doc comment). Their Validate methods are not here:
+	// Validate is step 7's (issue #28) and stays in pendingDeclarations,
+	// below, until that commit.
+	model := []string{
+		"Optional",
+		"Optional.Present",
+		"Optional.IsNull",
+		"Optional.Get",
+		"Optional.Set",
+		"Optional.SetNull",
+		"Optional.UnmarshalJSON",
+	}
 	for _, e := range s.Entities {
-		model = append(model, e.GoName)
+		g := e.GoName
+		model = append(model, g)
 		for _, f := range enumFields(e) {
 			model = append(model, f.EnumGoType)
 			for _, v := range f.EnumValues {
 				model = append(model, f.EnumGoType+v.GoName)
 			}
 		}
+		if e.HasCreate() {
+			model = append(model, g+"CreateInput")
+		}
+		if e.HasUpdate() {
+			model = append(model, g+"UpdateInput")
+		}
 	}
-	if len(model) != 0 {
-		byPackage[packageModel] = sorted(model)
-	}
+	byPackage[packageModel] = sorted(model)
 
 	// hooks, as rendered by templates/hooks_error.tmpl and
 	// templates/hooks_entity.tmpl (step 6): the fixed Error type and
@@ -146,18 +164,13 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		return byPackage
 	}
 
-	// model's remaining rows: the two input types and their Validate
-	// methods (spec §5.6, §6.5), plus the fixed Optional[T] every input
-	// member is built from and the six methods spec §6.5 states for it.
-	model := []string{
-		"Optional",
-		"Optional.Present",
-		"Optional.IsNull",
-		"Optional.Get",
-		"Optional.Set",
-		"Optional.SetNull",
-		"Optional.UnmarshalJSON",
-	}
+	// model's remaining rows: the two input types' Validate methods (spec
+	// §5.6, §6.5). The types themselves, and the fixed Optional[T], are in
+	// declarationSet now -- step 6 needed them to exist for hooks to
+	// type-check (spec §10's amended step 6 row) -- but Validate is step
+	// 7's (issue #28), the method that actually enforces §6.5's "Question
+	// 2", and nothing about hooks needs it.
+	var model []string
 	// store's fixed row is the cursor codec, whose identifiers spec §7.4
 	// does not name; see the doc comment.
 	var store []string
@@ -169,10 +182,10 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		g := e.GoName
 
 		if e.HasCreate() {
-			model = append(model, g+"CreateInput", g+"CreateInput.Validate")
+			model = append(model, g+"CreateInput.Validate")
 		}
 		if e.HasUpdate() {
-			model = append(model, g+"UpdateInput", g+"UpdateInput.Validate")
+			model = append(model, g+"UpdateInput.Validate")
 		}
 
 		store = append(store, g+"Store", "scan"+g)

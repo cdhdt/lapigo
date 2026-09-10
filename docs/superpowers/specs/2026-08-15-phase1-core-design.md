@@ -2,7 +2,7 @@
 
 Status: **accepted**, revision 2
 Date: 2026-08-15
-Amended: through 2026-09-10 — every amendment is listed in §13
+Amended: through 2026-09-11 — every amendment is listed in §13
 
 Revision 2 follows an adversarial review of revision 1 conducted against live
 PostgreSQL 17.10 and 18.6, pgx v5.10.0, Go 1.26.5 and goccy/go-yaml v1.19.2.
@@ -863,7 +863,7 @@ means the set is not fixed):
 
 | Package | Always | Only when |
 |---|---|---|
-| `model` | `E`, `EF`, one `EF<Value>` per enum member | `ECreateInput` and `ECreateInput.Validate` — `HasCreate()`; `EUpdateInput` and `EUpdateInput.Validate` — `HasUpdate()` |
+| `model` | `E`, `EF`, one `EF<Value>` per enum member | `ECreateInput` (step 6) and `ECreateInput.Validate` (step 7) — `HasCreate()`; `EUpdateInput` (step 6) and `EUpdateInput.Validate` (step 7) — `HasUpdate()` |
 | `store` | `EStore`, `scanE` | `EListQuery` and `EStore.List` — `HasList()`; `EStore.Get` — `HasGet()`; `EStore.Create` — `HasCreate()`; `EStore.Update` — `HasUpdate()`; `EStore.Delete` — `HasDelete()` |
 | `hooks` | — | `EHooks`, `NoopEHooks`, and one method trio per generated write operation — `HasCreate()`, `HasUpdate()`, `HasDelete()` respectively |
 | `httpapi` | lands with step 8 | — |
@@ -898,7 +898,12 @@ package-level helper anyone writes.
 contributes no fixture to the matrix until it does.** `store` lands at step 7 and
 `httpapi` at step 8 (§10); the commit that adds each one fills in its rows in
 the same change, which is the only moment at which the two can be written
-together and known to agree.
+together and known to agree. `model`'s conditional row splits across two
+commits rather than landing whole with one package: `ECreateInput`/
+`EUpdateInput` (the struct types) move to step 6, alongside `Optional[T]`,
+because §6.3's hook signatures name them and a step whose own package cannot
+type-check is not a step boundary (§10's amended step 6 row); `Validate`
+stays step 7's, since nothing about hooks needs it.
 
 Two properties of that set are load-bearing:
 
@@ -2002,8 +2007,8 @@ because it is believed.
 | 3 | Validator: §3.1, §3.3, §3.4, §5.6 | `internal/validate` | done — `a87b00d` |
 | 4 | DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | `internal/ddl` | done |
 | 5 | Template engine, formatting, determinism, staging, lock | `internal/gen` | not started |
-| 6 | Hooks interfaces and no-op implementations | `internal/gen` | not started |
-| 7 | Model and input types (§6.5), store, cursor encoding, keyset predicate | `internal/gen` | not started |
+| 6 | Hooks interfaces and no-op implementations, plus `model`'s `Optional[T]` and the `CreateInput`/`UpdateInput` struct types (§6.5) their signatures require | `internal/gen` | not started |
+| 7 | Input validation (`Validate() error`, §6.5), store, cursor encoding, keyset predicate | `internal/gen` | not started |
 | 8 | Handlers, error envelope, router, resource bounds | `internal/gen` | not started |
 | 9 | `lapigo new`, `lapigo gen` | `cmd/lapigo` | not started |
 
@@ -2012,6 +2017,21 @@ could run in parallel: the store invokes hooks inside its transaction, so hooks
 precede the store, and handlers depend on the store's types and cursor
 encoding. **7 depends on 6; 8 depends on 7.** Only 4 is genuinely independent of
 5–8 once 3 is in place.
+
+**Step 6's own row was wrong until measured, and is corrected here rather
+than left for step 7 to discover a second time.** §6.3's hook signatures name
+`*model.<Entity>CreateInput` and `*model.<Entity>UpdateInput` directly — they
+are not decoration, they are Go identifiers the compiler resolves — so those
+two struct types are hooks' *prerequisite*, not step 7's consequence. A step
+whose own package cannot type-check is not a step boundary. Step 6 therefore
+carries `model.Optional[T]` (§6.5, in full: all three states and all six
+methods) and the `CreateInput`/`UpdateInput` struct *types* — membership and
+member type only, via `Field.CreateInputPresence`/`UpdateInputPresence`/
+`ValueGoType` (§2.2's issue #25 accessors). `Validate() error`, the method
+that actually enforces §6.5's "Question 2" (mandatoriness), stays step 7's:
+nothing about hooks needs it, and it is the first method §5.6's table
+predicts on a covered receiver for `internal/validate`'s `reservedMethodNames`
+containment check (§5.6's own "what this does not yet check").
 
 **Step 5 carries a debt from step 3.** `internal/validate`'s
 `reservedMethodNames` rejects a field whose Go name would collide with a method
@@ -2118,3 +2138,4 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-09-10 | §1 | The in-scope bullet no longer says generated files are "atomically written" | §5.4 withdrew that claim and §12 records the withdrawal; §1 was the last place still asserting it. |
 | 2026-09-10 | §2.2 | `Entity`'s struct listing gained the `Indexes []Index` field it was already carrying in code (added by the 2026-08-22 §3.5 amendment above, but never reflected here); `EndpointKind` gained `Method() string`; `Entity` gained `HasList`/`HasGet`/`HasCreate`/`HasUpdate`/`HasDelete`; `Entity` gained `SortedFilters() []Filter`; `FilterOp` gained `SQL() string` | Issue #25: the templates step 5+ will consume were about to inline `"METHOD /path"` strings, per-kind boolean chains, an ad hoc sort for §7.4's fingerprint, and a hardcoded `"="`, each in template code — exactly what §5.1 forbids. `Entity.Filters` itself stays in declaration order; `internal/ddl/ddl.go`'s `indexColumnLists` derives one index per declared filter in that order, so the canonical by-name view §7.4 needs is a separate method, not a sort in place. |
 | 2026-09-10 | §2.2 | `Endpoint.Path` is removed; `Entity` gained `Path(kind EndpointKind) string`, computed from `Kind`, `Table` and `PK.Column`. The single-resource wildcard is named after `PK.Column`, never hardcoded to `"{id}"` | Issue #47: `Path` was a stored field whose only inputs were `Kind`, `Entity.Table` and `Entity.PK.Column`, the exact shape `Field.GoType`/`PgType` already refuse for the same reason (§2.2's own field.go rationale). Worse, `buildEndpoints` runs during entity resolution, before a `belongsTo` PK's `Column` is finalised in `resolvePendingRelations`' fixed point, so a stored `Path` risked freezing a placeholder. A hardcoded `{id}` wildcard also bound a decoded path value to the wrong column on any entity whose PK was not literally named `id` — e.g. `slug`. |
+| 2026-09-11 | §10, §5.6 | Step 6's row grows to include `model.Optional[T]` (all three states, all six methods) and the `CreateInput`/`UpdateInput` struct types — membership and member type only, not `Validate`. Step 7's row narrows to input validation, the store, the cursor codec and the keyset predicate. §5.6's table now attributes `ECreateInput`/`EUpdateInput` to step 6 and `ECreateInput.Validate`/`EUpdateInput.Validate` to step 7 | Issue #62, building step 6 (#27): §6.3's hook signatures name `*model.<Entity>CreateInput`/`UpdateInput` directly, and those two Go identifiers have to resolve for `internal/gen/compile_test.go`'s `go build ./...` to pass. Measured directly against the `full` and `no_list` fixtures (both declare `create`/`update`) with the hooks templates in place and nothing else changed: `full/internal/gen/hooks/article.go:22:57: undefined: model.ArticleCreateInput`, repeated for `ArticleUpdateInput`, `EventCreateInput` and `EventUpdateInput`. The old row order — "7 depends on 6" while 6 needs 7's own types to compile — was backwards, not merely incomplete: a step whose own package cannot type-check is not a step boundary, and `make check` is meant to be green at every one. Stubbing empty structs to force a green build instead was rejected: it would have `model`-package, `HasCreate()`-gated declarations originate from step 6's commit while §5.6 and `names.go` explicitly earmarked them for step 7's, and would ship a type with none of §6.5's actual content (no member carried the field it is named for). `Validate` stays step 7's because nothing about hooks needs it, and because it is still the first method §5.6's table predicts on a receiver `internal/validate`'s `reservedMethodNames` covers — step 6's hooks live on `<Entity>Hooks`/`Noop<Entity>Hooks`, receivers that carry no entity field, so §5.6's own containment debt (its "what this does not yet check") first becomes checkable in step 7, unmoved by this change. |

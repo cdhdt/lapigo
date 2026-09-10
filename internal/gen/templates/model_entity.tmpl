@@ -1,12 +1,22 @@
 {{- /*
 model/entity.go renders one entity's model declarations: the struct a
-scanned row fills and a handler marshals, and one generated type plus one
-constant per member for each enum field (spec §5.6's model row).
+scanned row fills and a handler marshals, one generated type plus one
+constant per member for each enum field, and -- since hooks (step 6)
+cannot type-check without them, spec §10's amended step 6 row -- the
+CreateInput/UpdateInput structs spec §6.5 projects from the same field set
+(spec §5.6's model row).
 
 Nearly logic-free, per spec §5.1: every Go type, every identifier and every
 quoted literal comes from the IR or from a funcMap function in gen.go. The
 only control flow here is iteration over slices the IR already orders --
-never a map, whose iteration order Go randomises (spec §5.3).
+never a map, whose iteration order Go randomises (spec §5.3) -- and the two
+if blocks selecting whether an input type exists at all
+(HasCreate/HasUpdate), which spec §5.1 leaves to the template because it is
+not a per-field decision the way membership within the struct is (that one
+is createInputMembers/updateInputMembers, in Go, in input.go).
+
+Validate() error is NOT rendered here: it is step 7's (issue #28), and a
+struct of Optional[T] members type-checks without it.
 */ -}}
 {{- define "model/entity.go" -}}
 {{template "header" .}}
@@ -35,5 +45,36 @@ const (
 {{- end}}
 )
 {{end}}
+{{- if .HasCreate}}
+
+// {{.GoName}}CreateInput is the generated request body for {{.GoName}}'s create
+// endpoint (spec §6.5). Every member is Optional[T], mandatory ones
+// included: a bare value type cannot tell an empty body apart from an
+// explicit null, the same trap a pointer falls into one type earlier
+// (spec §6.5, §13). Validate (step 7) is what enforces which members are
+// mandatory; this struct only says which members exist and whether each
+// reaches the wire.
+//
+// A member tagged json:"-" is off the wire -- DisallowUnknownFields rejects
+// an inbound key for it -- but a hook may still set it through Optional[T]'s
+// Set/SetNull (spec §6.5, "off the wire, not out of the struct").
+type {{.GoName}}CreateInput struct {
+{{- range createInputMembers .}}
+	{{.GoName}} Optional[{{.ValueGoType}}] {{.Tag}}
+{{- end}}
+}
+{{- end}}
+{{- if .HasUpdate}}
+
+// {{.GoName}}UpdateInput is the generated request body for {{.GoName}}'s update
+// endpoint (spec §6.5, §6.6). Absent means unchanged; Optional[T]'s IsNull is
+// what distinguishes that from an explicit null, which PATCH semantics
+// require and a pointer cannot express (spec §6.5, §13).
+type {{.GoName}}UpdateInput struct {
+{{- range updateInputMembers .}}
+	{{.GoName}} Optional[{{.ValueGoType}}] {{.Tag}}
+{{- end}}
+}
+{{- end}}
 {{- end}}
 {{- end -}}

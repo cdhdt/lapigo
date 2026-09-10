@@ -46,8 +46,8 @@ from revision 1 — so a change that reopens one of those needs an issue.
 | 3. Validator: §3.1, §3.3, §3.4, §5.6 | done — `a87b00d` |
 | 4. DDL emitter: `CREATE TABLE`, constraints, indexes from §7.2 | done — `4f1c8d4` |
 | 5. Template engine, formatting, determinism, staging, lock | **next** |
-| 6. Hooks interfaces and no-op implementations | not started |
-| 7. Model and input types, store, cursor encoding, keyset predicate | not started |
+| 6. Hooks interfaces and no-op implementations, plus `model`'s `Optional[T]` and the `CreateInput`/`UpdateInput` struct types (§6.5) their signatures require | not started |
+| 7. Input validation (`Validate() error`, §6.5), store, cursor encoding, keyset predicate | not started |
 | 8. Handlers, error envelope, router, resource bounds | not started |
 | 9. `lapigo new`, `lapigo gen` | not started |
 
@@ -62,6 +62,16 @@ debt recorded in spec §10: the first commit of step 5 must derive
 `internal/validate`'s `reservedMethodNames` from the templates it generates,
 not from this document's text. Do not start a step whose predecessor is not
 merged.
+
+Step 6's row was corrected on 2026-09-11 (spec §13): §6.3's hook signatures
+name `*model.<Entity>CreateInput`/`UpdateInput` outright, so those two struct
+types (and `model.Optional[T]`, which they are built from) are hooks'
+prerequisite, not step 7's consequence — measured directly as
+`undefined: model.ArticleCreateInput` from `internal/gen/compile_test.go`
+against a hooks package built to the original row split. A step whose own
+package cannot type-check is not a step boundary. `Validate() error`, the
+method that actually enforces §6.5's mandatoriness rule, stays step 7's:
+nothing about hooks needs it.
 
 ---
 

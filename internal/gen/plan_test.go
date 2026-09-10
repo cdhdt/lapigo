@@ -30,6 +30,12 @@ func TestPlan_Full(t *testing.T) {
 	}
 	want := []OutputFile{
 		{
+			Path:     "internal/gen/model/optional.go",
+			Package:  "model",
+			Imports:  []string{"encoding/json"},
+			Template: "model/optional.go",
+		},
+		{
 			Path:     "internal/gen/model/article.go",
 			Package:  "model",
 			Imports:  []string{"encoding/json", "github.com/jackc/pgx/v5/pgtype", "time"},
@@ -97,6 +103,7 @@ func TestPlan_OrderFollowsTheSortedEntities(t *testing.T) {
 		got[i] = f.Path
 	}
 	want := []string{
+		"internal/gen/model/optional.go",
 		"internal/gen/model/article.go",
 		"internal/gen/model/user.go",
 		"internal/gen/hooks/error.go",
