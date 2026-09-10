@@ -11,7 +11,7 @@ import (
 // identifierPattern is the complete grammar an entity name, field name or
 // explicit `table:` value must match. Anything outside it -- an empty
 // string, a slash, a brace, a space, a semicolon, a NUL byte -- reaches
-// either a generated http.ServeMux route pattern (Endpoint.Path is built
+// either a generated http.ServeMux route pattern (Entity.Path is built
 // directly from a table name) or a generated SQL identifier (a column or
 // table name), and neither of those is a context where free text is safe
 // (spec §3, CLAUDE.md "identifiers come from a whitelist").

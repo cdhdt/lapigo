@@ -32,6 +32,21 @@ var goldenCases = []string{
 	"sort_key_decimal",
 	"sort_key_json",
 	"sort_key_mutable_warning", // a warning, not an error -- see TestValidate_WarningDoesNotBlockGeneration
+
+	// sort_key_readonly_exempt_default_warns is issue #45's regression: a
+	// `default:` field is settable on update (spec §3.1/§6.5, decided in
+	// #16) and so is exactly what rule 5 exists to catch -- it must warn
+	// like any other mutable sort key, not be exempted. This fixture (née
+	// sort_key_default_and_readonly_exempt, when `default:` alone was still
+	// exempt and it lived in successFixtures) keeps both non-last keys from
+	// that original case: "created_at" carries only `default: now` and now
+	// expects the warning, while "slug" carries only `readonly: true` and
+	// stays silent, so the ReadOnly exemption -- untouched by this issue,
+	// and otherwise untested outside of valid.yaml's non-sort-key "slug" --
+	// is still proven to hold on a non-last key. The last key, "id", is the
+	// pk tiebreaker and stays silent via the PK exemption.
+	"sort_key_readonly_exempt_default_warns",
+
 	"filter_json",
 	"field_method_collision",
 	"relation_field_collision",
@@ -167,19 +182,6 @@ var goldenCases = []string{
 // exercising most rules at once.
 var successFixtures = map[string]bool{
 	"valid": true,
-
-	// sort_key_default_and_readonly_exempt is the mutation-gap regression
-	// for two of validateSortKeyMutability's four exemptions: valid.yaml's
-	// only default-carrying sort key ("created_at") is also `immutable:
-	// true`, so `f.Immutable` alone already exempts it and a mutant deleting
-	// `|| f.Default != nil` would go unnoticed there; valid.yaml's only
-	// readonly field ("slug") is never a sort key at all, so `|| f.ReadOnly`
-	// is exercised nowhere. This fixture puts a default-only key
-	// ("created_at", no `immutable:`) and a readonly-only key ("slug", no
-	// `immutable:`/`default:`) into the same sort spec, both non-last, so
-	// either exemption's deletion produces a spurious mutability warning
-	// where this fixture expects none.
-	"sort_key_default_and_readonly_exempt": true,
 
 	// declared_indexes_valid is the success counterpart of the four index
 	// fixtures above: two declared entries over the same filter pair in

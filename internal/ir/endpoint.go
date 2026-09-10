@@ -64,7 +64,34 @@ func (k EndpointKind) Method() string {
 // generated.
 type Endpoint struct {
 	Kind EndpointKind
-	Path string
+}
+
+// Path returns the HTTP route path for kind on e (spec §2.2, §6.2's
+// "GET /items/{id}" convention): the table name for the collection
+// operations List and Create, and the table name plus a wildcard for the
+// single-resource operations Get, Update and Delete.
+//
+// This is a computed method, not a stored field, for the same reason
+// field.go documents for GoType/PgType: the only genuine inputs are Kind,
+// e.Table and e.PK.Column, and a stored Path could be constructed
+// inconsistently with them. There is a second, sharper reason here --
+// buildEndpoints runs during entity resolution, but a belongsTo relation's
+// PK.Column is only finalised in resolvePendingRelations' fixed point,
+// so a Path computed and stored at that earlier point could freeze a
+// placeholder. A method reads e.PK.Column at call time and cannot be wrong.
+//
+// The wildcard is named after e.PK.Column, never hardcoded to "{id}": an
+// entity whose primary key is "slug" gets "/things/{slug}", so the
+// generated handler's r.PathValue call names the column it actually binds
+// to. This changes nothing on the wire -- a URL carries no wildcard names,
+// and Go's ServeMux ignores them for conflict detection (spec §6.2).
+func (e *Entity) Path(kind EndpointKind) string {
+	switch kind {
+	case EndpointList, EndpointCreate:
+		return "/" + e.Table
+	default:
+		return "/" + e.Table + "/{" + e.PK.Column + "}"
+	}
 }
 
 // HasList reports whether e's Endpoints include EndpointList.
