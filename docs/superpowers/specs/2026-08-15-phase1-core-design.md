@@ -100,7 +100,11 @@ type Entity struct {
     Fields    []*Field           // declaration order
     PK        *Field
     Sort      SortSpec           // never empty; [-PK] when `sort:` was omitted (§3.3)
-    Filters   []Filter
+    Filters   []Filter           // declaration order; SortedFilters() returns
+                                  // a canonical by-name copy for §7.4
+    Indexes   []Index            // declared composite indexes, declaration
+                                  // order (§3.5); the derived set of §7.2 is
+                                  // NOT stored here — the DDL emitter computes it
     Relations []Relation
     Endpoints []Endpoint
 }
@@ -152,6 +156,9 @@ type Filter struct {
     Span  source.Span            // the entry in `filters:`
 }
 
+// Derived, never stored.
+func (op FilterOp) SQL() string  // the SQL operator, e.g. "=" for FilterOpEq
+
 type Relation struct {
     Name       string            // "author"
     NameSpan   source.Span
@@ -168,6 +175,15 @@ type Endpoint struct {
     Kind EndpointKind            // List, Get, Create, Update, Delete
     Path string
 }
+
+// Derived, never stored.
+func (k EndpointKind) Method() string  // "GET"/"POST"/"PATCH"/"DELETE", for the
+                                         // Go 1.22 "METHOD /path" pattern
+func (e *Entity) HasList() bool
+func (e *Entity) HasGet() bool
+func (e *Entity) HasCreate() bool
+func (e *Entity) HasUpdate() bool
+func (e *Entity) HasDelete() bool
 ```
 
 **Every `Relation` that exists carries a valid `TargetSpan`.** A relation is
@@ -1158,3 +1174,4 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-09-09 | §2.2 | `Field.EnumValues` is `[]EnumValue{Name, GoName}`, not `[]source.At[string]` | Issue #24: nothing computed an enum value's Go identifier, so `values: [in-progress, in_progress]` — two values that case-convert to the same generator constant — validated clean and would have produced uncompilable code. §5.6's collision check needs a real identifier per value to compare. |
 | 2026-09-09 | §3.1 (parse rules) | An enum value whose computed Go identifier is empty (e.g. `"---"`, every character a separator) is rejected, alongside the existing non-empty/no-control-character rules | The enum-value counterpart of the field-name check below: `"---"` is legal enum-value text by the existing rules but names nothing a generated constant could carry. |
 | 2026-09-09 | §5.6 | The package-wide collision check compares every generated top-level declaration together — entity structs, enum types, *and* one enum constant (`EnumGoType + EnumValue.GoName`) per value — not enum types and entity structs alone; a name already rejected by the identifier grammar (leading digit aside) is excluded from this comparison rather than compared using its Go name anyway | An enum constant's name concatenates two variable-length prefixes (`entityGoName + goName(fieldName) + goName(value)`), which is ambiguous: field `state` value `x_y` and field `state_x` value `y` both produce `TaskStateXY`. Checking only entity and enum-*type* names (as a first pass at this issue did) missed that, and every within-field, cross-field, type-vs-constant, and constant-vs-entity-struct pairing besides (PR #39 review finding F1). Comparing an already-invalid name's mangled Go form against a valid sibling's produced a second diagnostic blaming the valid one for the invalid one's own defect (PR #39 review finding F2); excluding it entirely is more useful than merely correcting the message, since the invalid name already has its own diagnostic. |
+| 2026-09-10 | §2.2 | `Entity`'s struct listing gained the `Indexes []Index` field it was already carrying in code (added by the 2026-08-22 §3.5 amendment above, but never reflected here); `EndpointKind` gained `Method() string`; `Entity` gained `HasList`/`HasGet`/`HasCreate`/`HasUpdate`/`HasDelete`; `Entity` gained `SortedFilters() []Filter`; `FilterOp` gained `SQL() string` | Issue #25: the templates step 5+ will consume were about to inline `"METHOD /path"` strings, per-kind boolean chains, an ad hoc sort for §7.4's fingerprint, and a hardcoded `"="`, each in template code — exactly what §5.1 forbids. `Entity.Filters` itself stays in declaration order; `internal/ddl/ddl.go`'s `indexColumnLists` derives one index per declared filter in that order, so the canonical by-name view §7.4 needs is a separate method, not a sort in place. |
