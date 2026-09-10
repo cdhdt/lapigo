@@ -39,14 +39,19 @@ import (
 // What this does NOT yet check, and when it will: internal/validate's
 // reservedMethodNames is deliberately a superset of what is emitted (spec
 // §5.6), so the remaining half of the link is the containment
-// "every method name emitted here is reserved there". Today it is vacuously
-// true, because no template emits a method -- every method in spec §5.6's
-// table is in pendingDeclarations below, and the test that a pending name is
-// absent from the output is what keeps that true. The step that first emits
-// one (step 6's hooks, step 7's Validate) is the step that must add the
-// containment check, and it is also the first step at which the check could
-// fail; nothing here can assert it earlier without recreating, in this
-// package, the very list it would be checking.
+// "every method name emitted here is reserved there". Today it is still
+// vacuously true, and step 6 (hooks) does not change that: reservedMethodNames
+// is scoped to methods on the model, CreateInput and UpdateInput types --
+// the structs that carry an entity's fields as Go struct fields, per its own
+// doc comment -- and a hook lives on <Entity>Hooks and Noop<Entity>Hooks,
+// neither of which carries a field. §6.3's BeforeCreate has no collision
+// surface with a schema field named "before_create": they are methods on
+// different types in a different package. Step 7's Validate is the first
+// method this file will predict on a covered receiver (CreateInput,
+// UpdateInput), and is therefore the step that must add the containment
+// check and the first one at which it could fail; nothing here can assert it
+// earlier without recreating, in this package, the very list it would be
+// checking.
 
 // declarationSet returns, per generated package, every top-level declaration
 // the templates emit for s -- types, functions, variables, constants and
@@ -67,24 +72,68 @@ func declarationSet(s *ir.Schema) map[string][]string {
 		return byPackage
 	}
 
-	// model, as rendered by templates/model_entity.tmpl today: the entity
-	// struct, and per enum field a generated type plus one constant per
-	// declared member. Both conditional model rows (ECreateInput,
-	// EUpdateInput and their Validate methods) and model's fixed row
-	// (Optional[T]) are still pending, below.
-	var model []string
+	// model, as rendered by templates/model_entity.tmpl and
+	// templates/model_optional.tmpl: the fixed Optional[T] and its six
+	// methods (spec §6.5, §5.6's model fixed row), always present; the
+	// entity struct and, per enum field, a generated type plus one constant
+	// per declared member; and, gated on HasCreate()/HasUpdate(), the
+	// ECreateInput/EUpdateInput struct TYPES that spec §6.3's hook
+	// signatures require to exist (spec §10's amended step 6 row -- see
+	// input.go's own doc comment). Their Validate methods are not here:
+	// Validate is step 7's (issue #28) and stays in pendingDeclarations,
+	// below, until that commit.
+	model := []string{
+		"Optional",
+		"Optional.Present",
+		"Optional.IsNull",
+		"Optional.Get",
+		"Optional.Set",
+		"Optional.SetNull",
+		"Optional.UnmarshalJSON",
+	}
 	for _, e := range s.Entities {
-		model = append(model, e.GoName)
+		g := e.GoName
+		model = append(model, g)
 		for _, f := range enumFields(e) {
 			model = append(model, f.EnumGoType)
 			for _, v := range f.EnumValues {
 				model = append(model, f.EnumGoType+v.GoName)
 			}
 		}
+		if e.HasCreate() {
+			model = append(model, g+"CreateInput")
+		}
+		if e.HasUpdate() {
+			model = append(model, g+"UpdateInput")
+		}
 	}
-	if len(model) != 0 {
-		byPackage[packageModel] = sorted(model)
+	byPackage[packageModel] = sorted(model)
+
+	// hooks, as rendered by templates/hooks_error.tmpl and
+	// templates/hooks_entity.tmpl (step 6): the fixed Error type and
+	// NewValidationError (spec §6.4, §5.6's hooks fixed row), always
+	// present, plus per entity with at least one write operation the
+	// <Entity>Hooks interface, its embeddable Noop<Entity>Hooks, and one
+	// Before/After/AfterCommitted method trio per generated write operation
+	// (spec §6.3, §5.6's hooks conditional row).
+	hooks := []string{"Error", "Error.Error", "NewValidationError"}
+	for _, e := range s.Entities {
+		g := e.GoName
+		if !e.HasCreate() && !e.HasUpdate() && !e.HasDelete() {
+			continue
+		}
+		noop := "Noop" + g + "Hooks"
+		hooks = append(hooks, g+"Hooks", noop)
+		for _, op := range writeOperationsOf(e) {
+			hooks = append(hooks,
+				noop+".Before"+op,
+				noop+".After"+op,
+				noop+".After"+op+"Committed",
+			)
+		}
 	}
+	byPackage[packageHooks] = sorted(hooks)
+
 	return byPackage
 }
 
@@ -115,24 +164,16 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		return byPackage
 	}
 
-	// model's remaining rows: the two input types and their Validate
-	// methods (spec §5.6, §6.5), plus the fixed Optional[T] every input
-	// member is built from and the six methods spec §6.5 states for it.
-	model := []string{
-		"Optional",
-		"Optional.Present",
-		"Optional.IsNull",
-		"Optional.Get",
-		"Optional.Set",
-		"Optional.SetNull",
-		"Optional.UnmarshalJSON",
-	}
+	// model's remaining rows: the two input types' Validate methods (spec
+	// §5.6, §6.5). The types themselves, and the fixed Optional[T], are in
+	// declarationSet now -- step 6 needed them to exist for hooks to
+	// type-check (spec §10's amended step 6 row) -- but Validate is step
+	// 7's (issue #28), the method that actually enforces §6.5's "Question
+	// 2", and nothing about hooks needs it.
+	var model []string
 	// store's fixed row is the cursor codec, whose identifiers spec §7.4
 	// does not name; see the doc comment.
 	var store []string
-	// hooks' fixed row (spec §6.4): the typed error a hook returns to carry
-	// its own status into respondError.
-	hooks := []string{"Error", "Error.Error", "NewValidationError"}
 	// httpapi's fixed row: respondError is the one identifier spec §6.7
 	// names outright.
 	httpapi := []string{"respondError"}
@@ -141,10 +182,10 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		g := e.GoName
 
 		if e.HasCreate() {
-			model = append(model, g+"CreateInput", g+"CreateInput.Validate")
+			model = append(model, g+"CreateInput.Validate")
 		}
 		if e.HasUpdate() {
-			model = append(model, g+"UpdateInput", g+"UpdateInput.Validate")
+			model = append(model, g+"UpdateInput.Validate")
 		}
 
 		store = append(store, g+"Store", "scan"+g)
@@ -163,27 +204,10 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		if e.HasDelete() {
 			store = append(store, g+"Store.Delete")
 		}
-
-		// hooks exists for an entity only once it has a write operation to
-		// hook: spec §5.6's hooks row has nothing in its "always" column,
-		// and there are no List or Get hooks in phase 1 (spec §6.3).
-		if e.HasCreate() || e.HasUpdate() || e.HasDelete() {
-			// NoopEHooks is a prefix form, built here from its parts.
-			noop := "Noop" + g + "Hooks"
-			hooks = append(hooks, g+"Hooks", noop)
-			for _, op := range writeOperationsOf(e) {
-				hooks = append(hooks,
-					noop+".Before"+op,
-					noop+".After"+op,
-					noop+".After"+op+"Committed",
-				)
-			}
-		}
 	}
 
 	byPackage[packageModel] = sorted(model)
 	byPackage[packageStore] = sorted(store)
-	byPackage[packageHooks] = sorted(hooks)
 	byPackage[packageHTTPAPI] = sorted(httpapi)
 	return byPackage
 }

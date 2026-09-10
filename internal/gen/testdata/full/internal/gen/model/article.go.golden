@@ -43,3 +43,50 @@ const (
 	ArticleStatusInProgress ArticleStatus = "in_progress"
 	ArticleStatusPublished  ArticleStatus = "published"
 )
+
+// ArticleCreateInput is the generated request body for Article's create
+// endpoint (spec §6.5). Every member is Optional[T], mandatory ones
+// included: a bare value type cannot tell an empty body apart from an
+// explicit null, the same trap a pointer falls into one type earlier
+// (spec §6.5, §13). Validate (step 7) is what enforces which members are
+// mandatory; this struct only says which members exist and whether each
+// reaches the wire.
+//
+// A member tagged json:"-" is off the wire -- DisallowUnknownFields rejects
+// an inbound key for it -- but a hook may still set it through Optional[T]'s
+// Set/SetNull (spec §6.5, "off the wire, not out of the struct").
+type ArticleCreateInput struct {
+	Title     Optional[string]          `json:"title"`
+	Body      Optional[string]          `json:"body"`
+	Status    Optional[ArticleStatus]   `json:"status"`
+	Slug      Optional[string]          `json:"-"`
+	Views     Optional[int32]           `json:"views"`
+	Rank      Optional[int64]           `json:"rank"`
+	Score     Optional[float64]         `json:"score"`
+	Price     Optional[pgtype.Numeric]  `json:"price"`
+	Featured  Optional[bool]            `json:"featured"`
+	CreatedAt Optional[time.Time]       `json:"-"`
+	DueOn     Optional[time.Time]       `json:"due_on"`
+	Metadata  Optional[json.RawMessage] `json:"metadata"`
+	AuthorID  Optional[pgtype.UUID]     `json:"author_id"`
+}
+
+// ArticleUpdateInput is the generated request body for Article's update
+// endpoint (spec §6.5, §6.6). Absent means unchanged; Optional[T]'s IsNull is
+// what distinguishes that from an explicit null, which PATCH semantics
+// require and a pointer cannot express (spec §6.5, §13).
+type ArticleUpdateInput struct {
+	Title     Optional[string]          `json:"title"`
+	Body      Optional[string]          `json:"body"`
+	Status    Optional[ArticleStatus]   `json:"status"`
+	Slug      Optional[string]          `json:"-"`
+	Views     Optional[int32]           `json:"views"`
+	Rank      Optional[int64]           `json:"rank"`
+	Score     Optional[float64]         `json:"score"`
+	Price     Optional[pgtype.Numeric]  `json:"price"`
+	Featured  Optional[bool]            `json:"featured"`
+	CreatedAt Optional[time.Time]       `json:"-"`
+	DueOn     Optional[time.Time]       `json:"due_on"`
+	Metadata  Optional[json.RawMessage] `json:"metadata"`
+	AuthorID  Optional[pgtype.UUID]     `json:"author_id"`
+}

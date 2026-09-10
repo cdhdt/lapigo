@@ -31,7 +31,7 @@ import (
 func TestGenerate_NoSQLInterpolation(t *testing.T) {
 	for _, name := range goldenCases {
 		t.Run(name, func(t *testing.T) {
-			files, err := Generate(loadFixture(t, name))
+			files, err := Generate(loadFixture(t, name), testModulePath)
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}

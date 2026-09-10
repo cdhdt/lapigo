@@ -29,6 +29,10 @@ const (
 // second spelling of it cannot appear anywhere in this package.
 const pgtypeImport = "github.com/jackc/pgx/v5/pgtype"
 
+// pgxImport is pgx's own root package, needed wherever generated code names
+// pgx.Tx -- every hook signature carries one (spec §6.3).
+const pgxImport = "github.com/jackc/pgx/v5"
+
 // OutputFile is one Go file Generate will produce, with everything needed to
 // render it decided before any template runs (spec §2.1 step 6, §2.2).
 //
@@ -58,8 +62,9 @@ type OutputFile struct {
 // fileData is what every template receives. Package and Imports come
 // straight from the OutputFile so that the shared header template can render
 // without knowing which file it is in; Entity is the IR node the file is
-// about, and is nil for a file that is not per-entity (there are none yet;
-// spec §5.6's fixed per-package sets arrive with steps 6 to 8).
+// about, and is nil for a file that is not per-entity -- spec §5.6's fixed
+// per-package sets, such as model's Optional[T] (§6.5), hooks' Error (§6.4)
+// and, still pending, store's cursor codec.
 type fileData struct {
 	Package string
 	Imports []string
@@ -69,17 +74,29 @@ type fileData struct {
 // plan computes the complete set of output files for s, in a deterministic
 // order (spec §2.1 step 6).
 //
+// modulePath is the target project's own module path -- the first line of
+// its go.mod, e.g. "myapp" (spec §6.1's `lapigo new myapp`) -- and is needed
+// starting with step 6 because hooks is the first generated package to
+// import another one: every hook signature names a model type (spec §6.3),
+// and Go has no import syntax relative to the current module, only the
+// module's declared path plus the subdirectory. Generate does not read it
+// from anywhere -- it is not in lapigo.yaml, and reading the generating
+// machine's own go.mod would answer for the wrong module entirely -- so it
+// is a parameter, supplied by step 9's CLI from the target project's own
+// go.mod, exactly as Write's Options.Version is supplied rather than read
+// from a package global.
+//
 // The order comes from ir.Schema.Entities, which Freeze guarantees is sorted
 // by name, and from the fixed order of the loop body -- never from a map
 // (spec §5.3). Generate returns a map, so the order does not reach the
 // output on its own, but the plan is also what a later step iterates to
 // write files, and an unstable plan would produce unstable diagnostics.
-func plan(s *ir.Schema) ([]OutputFile, error) {
+func plan(s *ir.Schema, modulePath string) ([]OutputFile, error) {
 	if s == nil {
 		return nil, fmt.Errorf("gen: plan called on a nil schema")
 	}
 
-	files := make([]OutputFile, 0, len(s.Entities))
+	files := []OutputFile{planModelOptionalFile()}
 	for _, e := range s.Entities {
 		f, err := planModelFile(e)
 		if err != nil {
@@ -87,12 +104,44 @@ func plan(s *ir.Schema) ([]OutputFile, error) {
 		}
 		files = append(files, f)
 	}
+
+	hooksFiles, err := planHooksFiles(s, modulePath)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, hooksFiles...)
+
 	return files, nil
 }
 
+// planModelOptionalFile builds the OutputFile for model's one fixed
+// declaration, Optional[T] (spec §6.5, §5.6's model fixed row). It needs no
+// Entity: nothing in it is schema-derived.
+//
+// Always emitted, the same way planHooksErrorFile always is: gating it on
+// whether any entity in the schema has HasCreate() or HasUpdate() would be a
+// second, drifting copy of the condition each per-entity CreateInput/
+// UpdateInput already applies on its own, for no benefit -- an unused
+// generic type costs a generated project nothing.
+func planModelOptionalFile() OutputFile {
+	imports := []string{"encoding/json"}
+	return OutputFile{
+		Path:     genRoot + "/" + packageModel + "/optional.go",
+		Package:  packageModel,
+		Imports:  imports,
+		Template: "model/optional.go",
+		Data: fileData{
+			Package: packageModel,
+			Imports: imports,
+		},
+	}
+}
+
 // planModelFile builds the OutputFile for e's model types: the struct that a
-// scanned row fills and a handler marshals, plus one generated type and one
-// constant per member for each of e's enum fields (spec §5.6's model row).
+// scanned row fills and a handler marshals, one generated type and one
+// constant per member for each of e's enum fields, and -- gated on
+// HasCreate()/HasUpdate() -- the CreateInput/UpdateInput structs spec §6.5
+// projects from the same field set (spec §5.6's model row).
 //
 // One file per entity, named after the entity as written. Entity.Name has
 // passed the parser's identifier grammar, so it is safe as a path element,
@@ -118,6 +167,13 @@ func planModelFile(e *ir.Entity) (OutputFile, error) {
 
 // modelImports returns the sorted, deduplicated import set of e's model
 // file: whatever the Go types of e's fields need, and nothing else.
+//
+// This covers CreateInput/UpdateInput too, not only the model struct:
+// ValueGoType strips a field's nullability but never its underlying
+// package (a nullable uuid field and a non-nullable one both need pgtype,
+// as *pgtype.UUID and pgtype.UUID respectively), so the import a field
+// needs is a function of FieldType alone -- importsForFieldType already
+// answers for both call sites without change.
 //
 // It walks Fields, not Relations. A belongsTo produces both an ir.Field --
 // the foreign key scalar, whose Type is rewritten to the target primary

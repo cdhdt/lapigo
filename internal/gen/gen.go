@@ -57,6 +57,13 @@ const templateGlob = "templates/*.tmpl"
 // Generate renders s into module-root-relative file paths and their
 // formatted Go source (spec §2.1).
 //
+// modulePath is the target project's own module path -- the first line of
+// its go.mod, e.g. "myapp" for a project created with `lapigo new myapp`
+// (spec §6.1). It is needed starting with step 6, whose hooks package is the
+// first one to import another generated package; see plan's doc comment for
+// why Generate takes it as a parameter instead of resolving it some other
+// way.
+//
 // Every returned path is under internal/gen and every returned value is a
 // complete, gofmt-clean Go file. The initial migration is deliberately not
 // in this map (spec §5.4): it is not Go, it must never reach the formatter,
@@ -67,9 +74,12 @@ const templateGlob = "templates/*.tmpl"
 // output is never returned, because a caller that wrote it would leave the
 // user with a tree that does not compile and a lock file that disagrees with
 // it.
-func Generate(s *ir.Schema) (map[string][]byte, error) {
+func Generate(s *ir.Schema, modulePath string) (map[string][]byte, error) {
 	if s == nil {
 		return nil, fmt.Errorf("gen: Generate called on a nil schema")
+	}
+	if modulePath == "" {
+		return nil, fmt.Errorf("gen: Generate called with an empty modulePath")
 	}
 
 	tmpl, err := newTemplate(templatesFS, templateGlob)
@@ -77,7 +87,7 @@ func Generate(s *ir.Schema) (map[string][]byte, error) {
 		return nil, err
 	}
 
-	files, err := plan(s)
+	files, err := plan(s, modulePath)
 	if err != nil {
 		return nil, err
 	}
@@ -138,11 +148,14 @@ func render(t *template.Template, f OutputFile) ([]byte, error) {
 // text: quoting, comment sanitisation, the shape of an import block, and the
 // selection of an entity's enum fields.
 var funcMap = template.FuncMap{
-	"goString":    goString,
-	"comment":     comment,
-	"importBlock": importBlock,
-	"jsonTag":     jsonTag,
-	"enumFields":  enumFields,
+	"goString":           goString,
+	"comment":            comment,
+	"importBlock":        importBlock,
+	"jsonTag":            jsonTag,
+	"enumFields":         enumFields,
+	"hookOperations":     hookOperations,
+	"createInputMembers": createInputMembers,
+	"updateInputMembers": updateInputMembers,
 }
 
 // goString renders s as a Go string literal, quotes included (spec §5.1).
@@ -267,11 +280,22 @@ func importBlock(paths []string) (string, error) {
 
 // isStdlibImport reports whether path names a standard library package.
 //
-// The test is the toolchain's own: a standard library path's first element
-// contains no dot, because a module path's does (spec §2.3 allows exactly
-// two kinds of import in generated code -- the standard library and pgx --
-// so there is no third case for this to be wrong about).
+// The general test is the toolchain's own: a standard library path's first
+// element contains no dot, because a module path's does. That stopped being
+// the whole story once a generated package could import another one (step
+// 6, hooks importing model): a module path is not required to contain a
+// dot -- spec §6.1's own `lapigo new myapp` example does not -- and "myapp"
+// is indistinguishable from a standard-library-shaped path by the dot rule
+// alone. A path through genRoot is unconditionally the target project's
+// own, whatever its module happens to be called, because the standard
+// library has no "internal/gen" of anyone's: importsForFieldType and
+// hooksEntityImports never produce one, spec §2.3 allows only the standard
+// library and pgx besides it, and neither of those ever contains this
+// project's own output directory.
 func isStdlibImport(path string) bool {
+	if strings.Contains(path, "/"+genRoot+"/") {
+		return false
+	}
 	first := path
 	if i := strings.IndexByte(path, '/'); i >= 0 {
 		first = path[:i]

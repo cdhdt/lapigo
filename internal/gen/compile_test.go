@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+// compileModule is the one temp module every fixture's output is written
+// under (see this file's doc comment). It carries a dot in its first
+// segment for realism, same as gen_test.go's testModulePath; isStdlibImport
+// does not depend on it (see that function's own doc comment).
+const compileModule = "example.com/lapigogolden"
+
 // TestGenerate_OutputCompiles is spec §8's compile tier, and it is not
 // optional decoration here: it is the correction pass for the import set.
 //
@@ -21,7 +27,12 @@ import (
 //
 // Every fixture's output goes into one temp module, each under its own
 // subdirectory so that the same package name in two fixtures does not
-// collide, and the module is built once.
+// collide, and the module is built once. Since every fixture shares that
+// one module (compileModule), the modulePath Generate is given for fixture
+// name is compileModule+"/"+name -- fixture full's hooks package, for
+// instance, has to reach compileModule+"/full/internal/gen/model", not
+// compileModule's own internal/gen/model, which belongs to a different
+// fixture entirely.
 //
 // The module files are the repository's own, with only the module path
 // changed. That pins the generated code to the same pgx the generator is
@@ -41,7 +52,13 @@ func TestGenerate_OutputCompiles(t *testing.T) {
 	writeTempModule(t, dir)
 
 	for _, name := range goldenCases {
-		files, err := Generate(loadFixture(t, name))
+		// Each fixture's own subdirectory is also its own import root:
+		// compileModule + "/" + name is what a hooks file in that
+		// subdirectory needs to reach that same fixture's model package,
+		// since every fixture shares one module (compileModule) but is
+		// written under its own subdirectory to avoid a path collision (see
+		// this test's own doc comment).
+		files, err := Generate(loadFixture(t, name), compileModule+"/"+name)
 		if err != nil {
 			t.Fatalf("Generate %s: %v", name, err)
 		}
@@ -83,7 +100,7 @@ func writeTempModule(t *testing.T, dir string) {
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "module ") {
 		t.Fatalf("the repository's go.mod does not open with a module line: %q", lines[0])
 	}
-	lines[0] = "module lapigogolden"
+	lines[0] = "module " + compileModule
 
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 		t.Fatal(err)

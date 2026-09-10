@@ -1,0 +1,67 @@
+{{- /*
+hooks/error.go renders the hooks package's one fixed, schema-independent
+declaration: the typed error a hook returns to choose its own HTTP status
+and code, instead of the 500 "internal" every other error becomes (spec
+§6.4, §6.7, §5.6's hooks fixed row).
+
+This file also carries the package-level explanation spec §6.3 asks for
+explicitly: there are no List or Get hooks in phase 1. It is not attached as
+a godoc package comment -- no generated file in this project is (see
+header.tmpl: its own notice is separated from `package` by a blank line on
+purpose, so that one file's boilerplate cannot compete with another's for
+that slot) -- but it is the one hooks file every schema emits regardless of
+which entities exist, which makes it the file where a reader meets the
+package's shape first.
+*/ -}}
+{{- define "hooks/error.go" -}}
+{{template "header" .}}
+// Package hooks declares each entity's hook interface and its embeddable
+// no-op implementation (spec §6.2 escape hatch 1, §6.3), plus this file's
+// Error and NewValidationError, which let a hook choose its own HTTP status
+// and code (spec §6.4).
+//
+// There are no List or Get hooks in phase 1. Every hook above runs inside
+// the store's write transaction (spec §6.4's transaction-boundary table),
+// and a read has no transaction to hand it -- so a read hook is an
+// unanswered signature question, not a copy of the write shape. The payoff
+// people want from one is mostly interception of relation expansion, which
+// is deferred to phase 1.5.
+
+// Error is returned by a hook that wants to choose its own HTTP status and
+// error code, rather than the 500 "internal" every other error becomes
+// (spec §6.4, §6.7). httpapi's respondError matches it with errors.As
+// before falling back to the generic mapping.
+//
+// respondError also clamps a Status outside 400-599 to 500 before writing
+// the response: Status is a plain int on user-authored code, and
+// w.WriteHeader panics on an invalid one. That clamp belongs to step 8's
+// respondError, not to this type -- noted here so nobody implements it
+// twice.
+type Error struct {
+	Status  int               // HTTP status
+	Code    string            // the envelope's `code`
+	Message string            // the envelope's `message`
+	Fields  map[string]string // the envelope's `fields`; may be nil
+}
+
+// Error implements the error interface by reporting the code, the status
+// and the message together. It is meant for a log line, never for an HTTP
+// response -- httpapi builds the response straight from the fields above,
+// not from this string.
+func (e *Error) Error() string {
+	return fmt.Sprintf("%s (%d): %s", e.Code, e.Status, e.Message)
+}
+
+// NewValidationError builds the *Error a hook returns to reject its input:
+// status 422, code "validation_failed" (spec §6.4). fields may be nil --
+// httpapi's envelope omits an empty `fields` rather than emitting it as
+// null.
+func NewValidationError(message string, fields map[string]string) *Error {
+	return &Error{
+		Status:  http.StatusUnprocessableEntity,
+		Code:    "validation_failed",
+		Message: message,
+		Fields:  fields,
+	}
+}
+{{- end -}}
