@@ -137,6 +137,60 @@ func TestResolveVersion_NullableIsRejectedWithPosition(t *testing.T) {
 	}
 }
 
+// TestResolveVersion_PromotesEntityVersion is the regression test for issue
+// #25's second gap: Entity.Version must be set to the same *Field as the
+// one field marked `version: true`, mirroring how resolvePK sets Entity.PK
+// (TestParse_MinimalSchema's own e.PK assertion), so a §6.6 consumer never
+// has to rescan Fields to find the optimistic-concurrency column. Before
+// this test existed, resolveVersion validated the field but never promoted
+// it, so a valid schema parsed with zero diagnostics and Entity.Version
+// left nil.
+func TestResolveVersion_PromotesEntityVersion(t *testing.T) {
+	src := "entities:\n  article:\n    fields:\n" +
+		"      id: { type: uuid, pk: true }\n" +
+		"      v: { type: int, required: true, version: true }\n"
+
+	schema, diags := Parse(source.File{Name: "lapigo.yaml", Src: []byte(src)})
+	if len(diags) != 0 {
+		t.Fatalf("diags = %+v, want none", diags)
+	}
+	if schema == nil {
+		t.Fatal("schema is nil")
+	}
+	e := schema.Entities[0]
+	vField := e.Lookup("v")
+	if vField == nil {
+		t.Fatal(`Lookup("v") = nil`)
+	}
+	if e.Version != vField {
+		t.Error("Entity.Version does not point at the same *Field as the field marked version: true")
+	}
+	if err := schema.Freeze(); err != nil {
+		t.Errorf("Freeze() = %v, want nil", err)
+	}
+}
+
+// TestResolveVersion_NoVersionFieldLeavesEntityVersionNil proves the
+// converse: an entity with no `version: true` field at all must leave
+// Entity.Version nil, not some stale or default-zero *Field -- Version is
+// optional (spec §3.1's "at most one"), unlike PK.
+func TestResolveVersion_NoVersionFieldLeavesEntityVersionNil(t *testing.T) {
+	src := "entities:\n  article:\n    fields:\n" +
+		"      id: { type: uuid, pk: true }\n"
+
+	schema, diags := Parse(source.File{Name: "lapigo.yaml", Src: []byte(src)})
+	if len(diags) != 0 {
+		t.Fatalf("diags = %+v, want none", diags)
+	}
+	e := schema.Entities[0]
+	if e.Version != nil {
+		t.Errorf("Entity.Version = %+v, want nil: no field marked version: true", e.Version)
+	}
+	if err := schema.Freeze(); err != nil {
+		t.Errorf("Freeze() = %v, want nil", err)
+	}
+}
+
 // TestResolveVersion_PKIsRejectedWithPosition is the regression test for
 // issue #46 rule 3 and its own trap example: `id: { type: uuid, pk: true,
 // version: true }` used to validate with zero diagnostics on develop. A

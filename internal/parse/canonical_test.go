@@ -66,6 +66,7 @@ func TestParse_CanonicalSchema(t *testing.T) {
 		},
 	}
 	article.PK = article.Fields[0]
+	article.Version = article.Fields[7] // the version: true field, promoted (spec §3.1, §3.6, issue #25)
 	article.Sort.Keys = []ir.SortKey{{Field: article.Fields[6]}, {Field: article.Fields[0]}}
 	article.Filters = []ir.Filter{{Field: article.Fields[3], Op: ir.FilterOpEq}, {Field: article.Fields[5], Op: ir.FilterOpEq}}
 
