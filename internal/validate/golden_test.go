@@ -33,6 +33,16 @@ var goldenCases = []string{
 	"sort_key_json",
 	"sort_key_mutable_warning", // a warning, not an error -- see TestValidate_WarningDoesNotBlockGeneration
 
+	// version_sort_key_mutable_warning is issue #46's trap check: a
+	// version column the server bumps on every write is the worst possible
+	// sort key, so validateSortKeyMutability must keep warning on it even
+	// after resolveVersion (internal/parse/schema.go) starts requiring
+	// `required: true` and rejecting a nullable/wrong-typed/PK version
+	// field. The fix for issue #46 must NOT synthesize ReadOnly on the
+	// version field or add a Version case to validateSortKeyMutability's
+	// exemption list -- either would make this fixture stop warning
+	// silently. Only "version" warns here; "id" is the PK and stays exempt.
+	"version_sort_key_mutable_warning",
 	// sort_key_readonly_exempt_default_warns is issue #45's regression: a
 	// `default:` field is settable on update (spec §3.1/§6.5, decided in
 	// #16) and so is exactly what rule 5 exists to catch -- it must warn

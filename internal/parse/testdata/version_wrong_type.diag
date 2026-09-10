@@ -1,0 +1,4 @@
+lapigo.yaml:5:7: entity "article"'s version field "version" has type "text", want `int` or `bigint`
+   5 |       version: { type: text, required: true, version: true }
+     |       ^^^^^^^
+   mark `version` `type: int` or `type: bigint`; an optimistic-concurrency counter must be an integer the store can increment
