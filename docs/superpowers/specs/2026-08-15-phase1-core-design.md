@@ -2,7 +2,7 @@
 
 Status: **accepted**, revision 2
 Date: 2026-08-15
-Amended: 2026-08-19 (§2.2, §3.3 — see §13)
+Amended: through 2026-09-10 — every amendment is listed in §13
 
 Revision 2 follows an adversarial review of revision 1 conducted against live
 PostgreSQL 17.10 and 18.6, pgx v5.10.0, Go 1.26.5 and goccy/go-yaml v1.19.2.
@@ -62,7 +62,7 @@ lapigo.yaml
    ├─ 5. Verify      read .lapigo.lock, detect hand-edits — FAIL FAST HERE
    ├─ 6. Plan        compute the set of output files and their imports
    ├─ 7. Render      IR + templates → map[string][]byte, in memory
-   ├─ 8. Format      imports.Process per file
+   ├─ 8. Format      imports.Process, FormatOnly (§5.2)
    └─ 9. Write       staging directory, swap, rewrite the lock
 ```
 
@@ -75,6 +75,16 @@ read in step 1". Load, parse, resolve and validate sit above it; verify and
 write sit below. This boundary is what makes golden tests, determinism tests and
 type-checking fast and race-free, and it guarantees that a template failure
 leaves the output tree untouched.
+
+**Step 6 is what makes step 8 hermetic.** Plan computes each output file's
+import set from the IR — it already did in revision 2, and §2.2 already says
+imports are a property of a file — and step 8 formats with `FormatOnly: true`,
+so goimports is never asked to resolve anything. Import *resolution* scans the
+module cache and shells out to `go list`: filesystem access, a subprocess, and
+an ambient dependency, inside the function this section calls hermetic. It is
+also non-deterministic in practice, not only in principle — the measurements are
+in §5.2. The import set is corrected by the Go compiler, not by goimports
+(§5.2, §8).
 
 **Verify runs before render**, not inside write. Discovering a hand-edited file
 after twenty templates have rendered wastes the work and reports the error late.
@@ -173,12 +183,12 @@ type Relation struct {
 
 type Endpoint struct {
     Kind EndpointKind            // List, Get, Create, Update, Delete
-    Path string
-}
+}                                 // no Path — see below and §6.9.1
 
 // Derived, never stored.
 func (k EndpointKind) Method() string  // "GET"/"POST"/"PATCH"/"DELETE", for the
                                          // Go 1.22 "METHOD /path" pattern
+func (e *Entity) Path(k EndpointKind) string  // "/articles", "/articles/{id}"
 func (e *Entity) HasList() bool
 func (e *Entity) HasGet() bool
 func (e *Entity) HasCreate() bool
@@ -239,6 +249,18 @@ constructible with nothing objecting — a Go `string` bound to a
 entity name, hence cannot live on `FieldType`). Storing those and deriving the
 rest makes divergence unrepresentable rather than merely discouraged.
 
+**`Endpoint` carries no `Path`, for the same reason `Field` carries no
+`GoType`.** A stored path is a second copy of something the entity already
+determines — its table and its primary key column (§6.9.1) — so
+`Endpoint{Kind: EndpointGet, Path: "/users/{id}"}` on an entity whose table is
+`articles` is constructible with nothing objecting, exactly the class of defect
+that moved `GoType` and `PgType` onto methods (`internal/ir/field.go` states the
+same rule in code). The `Path` here is worse than merely redundant: it is
+computed while the entity is being resolved, and a `belongsTo` primary key's
+column is not final until `resolvePendingRelations` runs, so a stored path can
+freeze a placeholder column that later changes. `Entity.Path(k)` reads
+`e.Table` and `e.PK.Column` at render time and cannot disagree with them.
+
 **Imports are a property of a file, not an entity.** Step 6 produces a
 `[]OutputFile{Path, Package, Imports, Data}`; each output file carries its own
 import set. `Entity` has no `Imports` field — an entity spans four packages with
@@ -249,6 +271,14 @@ different needs.
 Generator: `github.com/goccy/go-yaml`, `golang.org/x/tools/imports`, stdlib, plus
 `github.com/jackc/pgx/v5` in tests only (§8's DDL apply tier).
 Generated code: stdlib and `github.com/jackc/pgx/v5`. Nothing else.
+
+**The pgx version a generated project pins is a build-time constant of the
+lapigo binary**, set with `-ldflags -X` exactly as the generator version is
+(§5.3), never read from the generator's own `go.mod` at run time and never
+resolved from the network. `lapigo new` writes it into `go.mod` together with
+pgx's indirect requirements and an embedded `go.sum` (§6.1), because §11
+asserts that `lapigo new → lapigo gen → psql → go run` works with no
+`go mod tidy` and no network step.
 
 `gopkg.in/yaml.v3` was archived on 1 April 2025 and must not be used.
 `go.yaml.in/yaml/v3` is its continuation but is explicitly frozen to security
@@ -278,8 +308,8 @@ entities:
       status:     { type: enum, values: [draft, published], required: true }
       slug:       { type: string, unique: true, readonly: true }
       author:     { type: belongsTo, target: user, on_delete: restrict }
-      created_at: { type: timestamp, required: true, default: now, immutable: true }
-      version:    { type: int, version: true }
+      created_at: { type: timestamp, required: true, default: now, readonly: true }
+      version:    { type: int, required: true, version: true }
     sort: [-created_at, -id]           # ONE direction for the whole spec
     filters: [status, author]
     endpoints: [list, get, create, update, delete]
@@ -297,10 +327,27 @@ entities:
 | `values` | Enum members. Emits a `CHECK` constraint. |
 | `target` | `belongsTo` target entity. |
 | `on_delete` | `restrict` (default), `cascade`, `set_null`. |
-| `default` | `now`, `uuid`, or a literal. Excludes the field from create input. |
-| `readonly` | Persisted and returned, **never accepted from a request**. |
+| `default` | `now`, `uuid`, or a literal. **Supplied at insert when the request omits the field.** The field stays settable — a client may send it on create and on update (§6.5). |
+| `readonly` | Persisted and returned, **never accepted from a request** — not on create, not on update. This, not `default:`, is how a field is made unsettable. |
 | `immutable` | Accepted on create, rejected on update. |
-| `version` | Optimistic concurrency column. At most one per entity. |
+| `version` | Optimistic concurrency column. At most one per entity, and constrained by §3.6. Excluded from both input types (§6.5). |
+
+`default:` and `readonly:` are not synonyms, and reading them as synonyms cost
+this project a merged defect. Under the earlier wording — "`default:` excludes
+the field from create input", combined with §6.5 building the update input by
+*subtraction* from the create input — a field carrying a default was in neither
+input type, so no client could ever set it, on create or on update. For
+`created_at` that happened to be the intent. For
+`status: { type: enum, values: [draft, published], default: draft }` it produced
+a CRUD API in which the status can never be changed, and it deleted the
+commonest field shape in the format: optional, with a fallback. `default:` now
+means only what its name says, and the two options compose:
+`default: now, readonly: true` is the `created_at` shape, spelled out.
+
+`readonly:` subsumes `immutable:` — a field never accepted from a request is
+also never accepted on update — so writing both is legal and redundant. §6.5's
+table is evaluated top to bottom and the first matching row wins, so the pair
+is unambiguous rather than merely tolerated.
 
 There is no `index:` option. Revision 1 had one, and it was a user-asserted
 claim about a database lapigo neither created nor inspected — the validator
@@ -325,8 +372,22 @@ emits it as DDL. Nothing to assert, nothing to lie about.
 | `json` | `jsonb` | `json.RawMessage` |
 | `enum` | `text` + `CHECK` | generated string type |
 
-Nullable fields use the pointer form (`*string`) so that "absent" and "null" are
-distinguishable.
+**Nullable fields use the pointer form (`*string`) in the model.** The reason is
+marshalling, not decoding: a model is output-only — a handler fills it from a
+scanned row and marshals it — and a nil pointer marshals to the JSON literal
+`null`, which is exactly what a column holding NULL must serialise to (§6.9.2
+also forbids `omitempty` in a model, so a null field never simply vanishes).
+
+It is **not** true that a pointer distinguishes "absent" from "explicitly null"
+on the way in, and an earlier revision of this document asserted that it did,
+here and again in §6.5. `encoding/json` sets a pointer to `nil` for the literal
+`null`, which is the same state absence leaves it in — `{}` and
+`{"body": null}` are indistinguishable after decoding — and `**T` fails
+identically, because `null` sets the outer pointer to nil before the inner one
+is ever allocated. `DisallowUnknownFields` does not help; it rejects keys the
+struct does not have, not values it does. **Input types therefore do not use
+pointers.** §6.5 specifies the generated `Optional[T]` that does distinguish the
+three states.
 
 `uuid` primary keys are generated in Go with `crypto/rand` (RFC 4122 v4, about
 fifteen lines, no dependency), not by a database default, so create returns the
@@ -423,6 +484,41 @@ apply here: that option was a user-asserted claim about a database lapigo
 neither created nor inspected, while `indexes:` is an instruction to the DDL
 emitter lapigo itself runs — phase 1 owns the `CREATE TABLE` and the `CREATE
 INDEX`, so nothing is asserted about a database that does not yet exist.
+
+### 3.6 The version column, enforced by the validator
+
+`version: true` is the only field option that turns a column into a control
+mechanism rather than data (§6.6). Revision 2 constrained it to "at most one per
+entity" and nothing else, and every remaining degree of freedom is a way to
+generate a store that cannot work. All four rules are enforced by the validator,
+with a position on the offending field.
+
+1. **The type is `int` or `bigint`.** Nothing else. Measured against the merged
+   parser: `version: { type: text, version: true }` and
+   `{ type: json, version: true }` both validate clean today, and step 7 would
+   emit `SET version = version + 1` against them.
+2. **`required: true` is mandatory.** A nullable version column emits a nullable
+   integer, and a row whose version is NULL makes every `version = $n`
+   comparison yield unknown — so §6.6's `If-Match` update matches zero rows and
+   returns `409` forever, for that row, permanently. This is §3.3 rule 3's
+   reasoning ("SQL comparison against NULL yields unknown") applied to a
+   different column. This resolves open question 6.
+3. **It may not also be the primary key.** Measured:
+   `id: { type: uuid, pk: true, version: true }` validates clean today, and step
+   7 would emit `SET id = id + 1` on a uuid. Even with an integer key, a primary
+   key that renumbers itself on every update is not a primary key.
+4. **It is excluded from `CreateInput` and `UpdateInput`** — its own row in
+   §6.5's table, not a synthesized flag. Without the exclusion a client can
+   `PATCH` its own version and defeat `If-Match` entirely, which inverts the one
+   security control §6.5 exists to state.
+
+**Rule 4 is deliberately not implemented by setting `ReadOnly` on the field**,
+and this is the trap in the whole decision. `internal/validate/sort.go` exempts
+`ReadOnly` fields from §3.3 rule 5's mutable-sort-key warning, so synthesizing
+the flag would silently delete that warning for a version column — and a version
+column is the worst possible sort key in the format, since its value changes on
+every single update. The input projection and the mutability warning ask
+different questions and must not share a field.
 
 ---
 
@@ -570,14 +666,41 @@ width is a 1.5 concern.
 
 ### 5.2 Formatting
 
-`golang.org/x/tools/imports.Process`, with import resolution **enabled**.
+`golang.org/x/tools/imports.Process`, with **`FormatOnly: true`** — gofmt plus
+import-block grouping and sorting, and no resolution. The import set comes from
+step 6 (§2.1), which already computes it, and §2.2 already makes it a property
+of the output file.
 
-Revision 1 had the IR compute the import set and ran `FormatOnly: true` to save
-the resolution cost. That was a micro-optimisation of build time — milliseconds
-across a handful of files — bought with a permanent correctness risk:
-`FormatOnly` neither adds a missing import nor removes an unused one, so any
-error in the computed set becomes a compile error in the user's project with no
-safety net. The correction pass is worth more than the milliseconds.
+**This reverses revision 2's own reversal, and that reversal was wrong on all
+three of its premises.** §12 records it as "`FormatOnly: true` dropped —
+milliseconds of build time bought with a permanent correctness risk and no
+correction pass". Measured against goimports with resolution enabled:
+
+- *It is not milliseconds.* Resolution costs **135–550 ms per file**, because it
+  scans the module cache and shells out to `go list`. That is the smallest of
+  the three problems, and it is the only one revision 2 weighed.
+- *Resolution **is** the correctness risk.* Against a target `go.mod` correctly
+  requiring `github.com/jackc/pgx/v5 v5.10.0`, goimports added
+  `github.com/jackc/pgx` — the **pre-v5** module, present in that machine's
+  cache — and exited 0 with no error. Against an empty module cache it dropped
+  the pgx import **entirely** and exited 0. Same schema, same `go.mod`,
+  different bytes depending on which modules the developer happens to have
+  downloaded: a direct violation of §5.3 that no amount of sorting fixes,
+  producing output that imports the wrong module in one case and does not
+  compile in the other, silently in both.
+- *The correction pass already exists, and it is the compiler.* §8 mandates that
+  golden output be written to a temp module and built with `go build`. That tier
+  catches an error in the computed set in **both** directions — a missing import
+  is `undefined: pgx`, a surplus one is `imported and not used` — which is
+  strictly more than goimports offers, since goimports reports neither.
+
+`FormatOnly: true` still runs gofmt and still groups and sorts the import block,
+so the formatting contract this section states is unchanged; only the resolution
+is gone. With it goes the second half of the problem: revision 2 passed a
+`filename` pointing into `internal/gen`, a directory that at render time is
+either the tree about to be renamed away (§5.4) or absent on a first run, and
+goimports' behaviour against a non-existent directory is undefined. A hermetic
+formatter has no filename to be wrong about.
 
 When rendered text fails to parse, the error presents the **unformatted** output
 with line numbers, so the reported `line:col` points at something readable.
@@ -599,11 +722,20 @@ Same schema in, byte-identical files out.
 | Absolute paths | Relative to the module root. |
 | Generator version string | Pinned at build time with `-ldflags -X`, never computed per run. |
 | Schema file discovery order | Explicitly sorted, never left to filesystem enumeration. |
+| goimports import resolution | Removed. `FormatOnly: true`; the import set comes from step 6. Resolution reads the machine's module cache, so the same schema produced different imports on two machines — measured, §5.2. |
+| pgx version in a generated `go.mod` | Pinned at build time with `-ldflags -X`, never resolved per run (§2.3). |
 
 Tested by generating twenty times and asserting byte equality of every file,
 under `-race`.
 
 ### 5.4 Writing
+
+`Generate`'s map contains Go files under `internal/gen` and nothing else. The
+initial migration is **not** in it: it is not Go, it must never reach the
+formatter, it does not live under `internal/gen`, and it is not written by the
+swap below. Step 9's CLI owns it (§6.1), which keeps this map homogeneous —
+every entry is a Go file that is formatted, staged and swapped by the same four
+steps, with no per-entry exception to carry through §5.2, §5.3 and §5.5.
 
 1. Render everything to memory. A failure anywhere aborts before touching disk.
 2. Write into `internal/.lapigo-staging`. The leading dot matters: the Go
@@ -624,16 +756,49 @@ directories are swept on the same pass.
 
 ### 5.5 Hand-edit detection
 
-`.lapigo.lock` records a SHA-256 per generated file plus the generator version.
-It is **committed to version control** — a fresh clone must know what the
-previous generation produced.
+`.lapigo.lock` records the generator version plus one entry per file lapigo has
+written. It is **committed to version control** — a fresh clone must know what
+the previous generation produced.
 
-| Situation | Behaviour |
-|---|---|
-| File checksum differs from the lock | Stop, name the file, exit non-zero. `--force` overrides. |
-| A file in `internal/gen` the lock has never seen | Stop. It is either a hand-added file or a stale artifact; the tool does not guess. |
-| Lock absent, `internal/gen` absent | First run. Proceed. |
-| Lock absent, `internal/gen` present | Stop. Nothing is known about that content, and rename-aside would destroy it. `--force` overrides. |
+**Every entry carries a kind**, because the lock answers two different questions
+and revision 2 conflated them:
+
+| Kind | Files | Checksum records | Compared to disk |
+|---|---|---|---|
+| `generated` | `internal/gen/**` | the file as written | yes, every run |
+| `emitted-once` | `migrations/0001_init.sql` | what lapigo **emitted** at creation | **never** |
+
+*"Was this hand-edited?"* protects a file that is about to be **overwritten**.
+It is worth a hard stop precisely because the answer decides whether work is
+about to be destroyed.
+
+*"Is this behind the schema?"* is a question about **provenance**, and it is
+answerable without ever hashing the file on disk: compare
+`sha256(ddl.Emit(schema))` against the checksum recorded when the migration was
+created. A hand edit to the migration does not move that value; a schema change
+does. `ddl.Emit` is already pure, total and deterministic (§5.3, §8), so
+re-emitting it on every run costs nothing and needs no database.
+
+That separation is what makes §6.1's *warning* and this section's *hard stop*
+both true at once. The migration is never overwritten, so asking the hand-edit
+question about it manufactures a stop with nothing to protect — and stops on
+exactly the state open question 4 already contemplates as normal and tolerated.
+
+| Situation | Kind | Behaviour |
+|---|---|---|
+| File present **and** its checksum differs from the lock | `generated` | Stop, name the file, exit non-zero. `--force` overrides. |
+| File present **and** the *emitted* checksum differs | `emitted-once` | Warn, name the file, never write, exit 0. §6.1 enumerates all four of this kind's states. |
+| File absent, entry present | `generated` | Proceed. `rm -rf internal/gen` is the documented way to force a clean regeneration, and a file that is not there has no work to lose. |
+| File absent, entry present | `emitted-once` | Stop, name the file, say it must be restored from version control. `--force` re-emits it. |
+| A file in `internal/gen` the lock has never seen | — | Stop. It is either a hand-added file or a stale artifact; the tool does not guess. |
+| Lock absent, `internal/gen` absent | — | First run. Proceed. |
+| Lock absent, `internal/gen` present | — | Stop. Nothing is known about that content, and rename-aside would destroy it. `--force` overrides. |
+
+Row 1 says *present **and** differs* on purpose. Revision 2 wrote "file checksum
+differs from the lock", which is literally true of a file that is not there at
+all, so `lapigo gen` refused and demanded `--force` in the one state where
+regenerating is obviously correct — after deleting `internal/gen`, or in a clone
+where it is gitignored.
 
 A hand-edit is almost always a signal that an extension point is missing. The
 safe failure mode is to tell a human, never to delete their work.
@@ -659,6 +824,85 @@ identifiers; leading digits and empty results; case collisions after export
 (`user_id` and `userId` both yield `UserID`); a field colliding with a generated
 method (`validate` → `Validate`); collision with an identifier the generated
 package already exports.
+
+#### What the generated packages declare
+
+"Collision with an identifier the generated package already exports" was
+unenumerated, which made it unimplementable: the merged validator checks entity
+against entity and entity against enum type, and derived names collide with
+nothing. Entity `article` yields `ArticleCreateInput`; an entity named
+`article_create_input` yields the same identifier, in the same package, and the
+schema validates clean.
+
+**§6.1's file tree is authoritative: generated code lives in four packages, not
+one.** §6.3's user-side example wrote `gen.NoopArticleHooks`, which implies a
+single package and a single collision domain; that example was wrong and is
+corrected in §6.3. The distinction is not cosmetic — it decides the answer.
+
+For every entity with Go name `E`, and every enum field of that entity with Go
+name `F`:
+
+| Package | Declared |
+|---|---|
+| `model` | `E`, `ECreateInput`, `EUpdateInput`, `EF`, and one `EF<Value>` per enum member |
+| `store` | `EStore`, `EListQuery` |
+| `hooks` | `EHooks`, `NoopEHooks` |
+| `httpapi` | lands with step 8; this table is extended in the same commit |
+
+Each package also declares a **fixed** set that does not vary with the schema —
+`model`'s `Optional[T]` (§6.5), `hooks`'s `Error` and `NewValidationError`
+(§6.4), the router constructor `httpapi` exposes as escape hatch 2 (§6.2) — and
+those names are part of the same comparison, both as identifiers a
+schema-derived name may not collide with and as declarations the equality test
+below must predict. A per-entity table alone would fail that test on the first
+package-level helper anyone adds.
+
+Two properties of that set are load-bearing:
+
+- **Collisions are compared *within* a package, never across.** `Article` in
+  `model` and `ArticleStore` in `store` are different packages and do not
+  collide, and neither do `EHooks` and a hypothetical `model` type of the same
+  name. "Reject, never mangle" licenses rejecting an *ambiguous* schema; it does
+  not license rejecting a legal one, and a cross-package comparison would.
+- **`NoopEHooks` is a prefix form.** An implementation that checks "does this
+  name end in one of the known suffixes" is wrong, silently, for exactly one
+  entry in the table — the one whose entity name lands at the end.
+
+A derived name is attributed to the entity's `NameSpan` (or, for an enum
+constant, the value's own span per the 2026-09-09 amendment), so the diagnostic
+still blames a line in the schema with a caret under the token that caused it.
+A generated name has no position of its own; the schema token that produced it
+does.
+
+#### Linking the table to the templates
+
+§10 records this as a debt from step 3 and states the mechanism as "derive the
+reserved set from the templates". **That is not mechanically possible.**
+Template files are `text/template` text, not parseable Go — `go/parser` rejects
+them — and the identifier a template emits is a function of runtime data
+(`type {{.GoName}}Store struct`), so no static read of the template text yields
+`ArticleStore`.
+
+What works is the inverse. Render a fixture matrix, parse the **output** with
+`go/ast`, and assert **set equality, per package, in both directions**:
+
+1. every top-level declaration in the rendered output is predicted by the table
+   above;
+2. every name the table predicts for those fixtures is present in the output.
+
+Equality, not subset. A subset check in direction 1 alone passes when the table
+lists a name no template emits; in direction 2 alone it passes when a template
+emits a name the table has never heard of — which is the drift this test exists
+to catch. Only both together fail on both.
+
+**The fixture matrix rule:** for every schema option that changes *which*
+declarations are emitted — each `endpoints:` member, `version:`, an enum field,
+a `belongsTo` — the matrix contains a fixture with it present and a fixture with
+it absent. A declaration emitted only for versioned entities is invisible to a
+matrix whose fixtures all omit `version:`, and invisible in a way that looks
+exactly like a pass. A further test asserts that the matrix covers each option
+in both states, so adding an option without extending the matrix fails rather
+than quietly narrowing the coverage.
 
 ---
 
@@ -688,9 +932,41 @@ myapp/
 └── .lapigo.lock              # lapigo, committed
 ```
 
-`0001_init.sql` is written only if it does not exist. If the schema changes
-afterwards, `lapigo gen` warns that the migration is now behind and that
-diffing arrives in phase 2; it does not silently rewrite applied history.
+#### `lapigo new`'s module files
+
+`go.mod` is written with the module path, the Go version, and
+`github.com/jackc/pgx/v5` at the version pinned into the lapigo binary at build
+time (§2.3) **plus pgx's own indirect requirements**, and `go.sum` is written
+from bytes embedded in the binary. Neither is computed per run and neither
+touches the network. Both halves are necessary, measured:
+
+- without the `go.sum` lines, `go build` fails with `missing go.sum entry`;
+- without the indirect requires, it fails with `updates to go.mod needed`.
+
+§11 asserts that `lapigo new demo && lapigo gen && psql -f … && go run ./cmd/api`
+works with no `go mod tidy` and no network step, and these files are what makes
+that assertion true rather than aspirational.
+
+#### `migrations/0001_init.sql`
+
+The migration is written by step 9's CLI, not by `Generate` (§5.4), and it is
+covered by an `emitted-once` lock entry (§5.5) recording the SHA-256 of what
+lapigo emitted when it created the file — never of the file on disk. Four
+states, exhaustively:
+
+| State | Behaviour |
+|---|---|
+| File absent, no lock entry | Write it, record the emitted checksum. |
+| File present, `sha256(ddl.Emit(schema))` equals the recorded checksum | Silent. The schema has not moved. |
+| File present, the emitted checksum differs | **Warn**, name the file, point at phase 2's diffing. Never write, never stop, exit 0. |
+| File absent, lock entry present | **Stop.** Say it must be restored from version control; `--force` re-emits it. |
+
+Row 3 is the case that matters. The migration is applied history: rewriting it
+silently is how a generator corrupts a production database, and stopping on it
+would break the workflow open question 4 already treats as normal — a hand-edited
+migration is a tolerated state, not an error. Because the comparison is against
+what lapigo *emitted*, a hand edit does not move it and does not false-warn; only
+a schema change does.
 
 ### 6.2 Four escape hatches
 
@@ -711,29 +987,76 @@ diffing arrives in phase 2; it does not silently rewrite applied history.
 
 ### 6.3 Hooks
 
+The interface is stated in full, for all five operations. Revision 2 showed
+`Create` and wrote "same shape for Update and Delete", which is not a shape
+anyone can copy: `Delete` has no input type to be the analogue of
+`*ArticleCreateInput`, and there is no `DeleteInput` anywhere in this document.
+
 ```go
-// generated
+// generated — package hooks
 type ArticleHooks interface {
-    BeforeCreate(ctx context.Context, tx pgx.Tx, in *ArticleCreateInput) error
-    AfterCreate(ctx context.Context, tx pgx.Tx, a *Article) error
-    AfterCreateCommitted(ctx context.Context, a *Article)
-    // ... same shape for Update and Delete
+    BeforeCreate(ctx context.Context, tx pgx.Tx, in *model.ArticleCreateInput) error
+    AfterCreate(ctx context.Context, tx pgx.Tx, a *model.Article) error
+    AfterCreateCommitted(ctx context.Context, a *model.Article)
+
+    BeforeUpdate(ctx context.Context, tx pgx.Tx, in *model.ArticleUpdateInput) error
+    AfterUpdate(ctx context.Context, tx pgx.Tx, a *model.Article) error
+    AfterUpdateCommitted(ctx context.Context, a *model.Article)
+
+    BeforeDelete(ctx context.Context, tx pgx.Tx, id pgtype.UUID) error
+    AfterDelete(ctx context.Context, tx pgx.Tx, a *model.Article) error
+    AfterDeleteCommitted(ctx context.Context, a *model.Article)
 }
 
 type NoopArticleHooks struct{}
-func (NoopArticleHooks) BeforeCreate(context.Context, pgx.Tx, *ArticleCreateInput) error { return nil }
+func (NoopArticleHooks) BeforeCreate(context.Context, pgx.Tx, *model.ArticleCreateInput) error { return nil }
 // ...
 ```
 
 ```go
 // yours
-type ArticleHooks struct{ gen.NoopArticleHooks }
+type ArticleHooks struct{ hooks.NoopArticleHooks }
 
-func (h ArticleHooks) BeforeCreate(ctx context.Context, tx pgx.Tx, in *gen.ArticleCreateInput) error {
+func (h ArticleHooks) BeforeCreate(ctx context.Context, tx pgx.Tx, in *model.ArticleCreateInput) error {
     in.Slug = slugify(in.Title)
     return nil
 }
 ```
+
+The user-side example imports `hooks` and `model`, not a single `gen` package.
+Revision 2 wrote `gen.NoopArticleHooks` and `gen.ArticleCreateInput`, which
+contradicts §6.1's own file tree — four packages, `model`, `store`, `httpapi`
+and `hooks` — and, worse, implies a single collision domain for §5.6's name
+check. §6.1's tree is authoritative.
+
+**`BeforeDelete` receives the id, not the row.** `id` is typed as the primary
+key's Go type (§3.2), so `pgtype.UUID` here and `string` for a `slug` key. A
+pre-image would have to be loaded, and the store cannot know at generation time
+whether a given user's `BeforeDelete` is still the no-op, so it would have to
+emit `SELECT … FOR UPDATE` before **every** delete of **every** entity —
+a blanket cost on every user of the generator to serve a hook most of them never
+implement. That is the reasoning that rejected `COUNT(*)` and offset pagination,
+applied to hooks. "What was deleted" logic belongs in `AfterDelete` and
+`AfterDeleteCommitted`, which receive the full row from the store's
+`DELETE … RETURNING` — already loaded, already free.
+
+**`BeforeUpdate` receives no pre-image either**, for the same reason, and it
+does not need one to answer the question hooks actually ask: *was this field
+submitted?* `in.Title.Present()` answers it, because `ArticleUpdateInput`'s
+members are `Optional[T]` (§6.5). An earlier analysis justified this with
+"`in.Title != nil` already does this work — §6.6's absent-versus-null pointer
+design". That pointer design does not exist and cannot: §3.2 records the
+measurement. The conclusion stands; the mechanism is `Optional[T]`, not a
+pointer.
+
+**There are no `List` or `Get` hooks in phase 1**, and that is a decision, not an
+omission. Every hook above takes a `pgx.Tx` because hooks run inside the store's
+write transaction; a read has no such transaction, so a read hook is an
+unanswered signature question — does it get a `pgx.Tx`, a `pgx.Conn`, nothing? —
+rather than a copy-paste of the write shape. And the payoff people want from a
+list hook is mostly interception of relation expansion, which is deferred to 1.5
+(§1). Adding them later is not a breaking change, because embedding the no-op is
+what makes the interface evolvable, below.
 
 **The transaction is an explicit parameter.** Revision 1's signature took only a
 `context.Context`, which made §6.4's "related writes inside the transaction"
@@ -762,30 +1085,162 @@ table, and the spec should not let them assume otherwise.
 Phase 5 cache invalidation hangs off `AfterXCommitted`. Invalidating before
 commit is a race that re-caches the pre-write state.
 
+**"Can abort" needs a way to say *how*.** Revision 2 designated `BeforeX` as the
+place for validation and gave a returned error nowhere to land: §6.7's table had
+no row for it, so it fell through to *"anything else → 500 `internal`"* and a
+user's own validation rejection was emitted to their client as a 500 with a
+correlation identifier and no detail. That breaks §11's fourth criterion in
+spirit — the envelope is technically respected and the response is useless.
+
+```go
+// generated — package hooks
+type Error struct {
+    Status  int               // HTTP status
+    Code    string            // the envelope's `code`
+    Message string            // the envelope's `message`
+    Fields  map[string]string // the envelope's `fields`; may be nil
+}
+
+func (e *Error) Error() string
+
+// NewValidationError fills Status 422 and Code "validation_failed".
+func NewValidationError(message string, fields map[string]string) *Error
+```
+
+A hook returns `*hooks.Error` to choose its own status and code; it returns any
+other error to get the 500 it deserves. `respondError` matches it with
+`errors.As` (§6.7) and **clamps a `Status` outside 400–599 to 500**. A hook is
+user code, `Status` is an untyped `int`, and `w.WriteHeader(0)` panics — trusting
+a user's integer blindly would turn a typo in an extension point into a crashed
+request. The clamp is silent to the client and logged.
+
 ### 6.5 Input projection — what a client may set
 
 This is the mass-assignment rule, stated as a rule rather than implied.
 
-`CreateInput` contains every field **except**: the primary key, any field with a
-`default:`, and any `readonly:` field. `UpdateInput` contains every field in
-`CreateInput` **except** `immutable:` fields, with every member a pointer so
-that "absent" and "explicitly null" are distinguishable.
+**It is a table, not a subtraction.** Revision 2 defined `CreateInput` by
+removing fields from the field list and `UpdateInput` by removing fields from
+`CreateInput`, and a subtraction has exactly one knob per field: it can remove,
+never re-add. Two of the three defects settled here were manufactured by that
+shape — `default:` propagating its create-time exclusion into the update input
+(§3.1), and the version column having no row to be excluded by (§3.6). A table
+states each projection independently and can say *present, and optional*, which
+a subtraction cannot express at all.
+
+Each field matches the **first** row that applies, top to bottom:
+
+| Field carries | `CreateInput` | `UpdateInput` |
+|---|---|---|
+| `pk` | absent | absent |
+| `readonly: true` | absent | absent |
+| `version: true` | absent | absent |
+| `immutable: true` | present, optional | absent |
+| `default:` | present, optional | present |
+| `required: true`, no `default:` | present, **mandatory** | present |
+| anything else | present, optional | present |
+
+*Mandatory* means the request is rejected with 422 when the key is absent.
+*Optional* means an absent key is allowed: on create the database or the
+generator supplies the value (`default:`) or the column is nullable; on update
+an absent key means unchanged (§6.6).
+
+**"Absent" is a statement about the wire, and for `readonly:` only, the Go
+struct still carries the member — tagged `json:"-"`.** §6.4 designates
+`BeforeCreate` as the place for derived fields and §6.3's own example writes
+`in.Slug = slugify(in.Title)` against a `slug` that §3's schema marks
+`readonly: true`; a hook cannot set a member that does not exist. The tag is
+what keeps the projection honest: `DisallowUnknownFields` does not know the key
+`slug`, so an inbound `{"slug": "…"}` is a 400 — which is exactly the assertion
+§8 already lists. `pk` and `version: true` carry no member at all, because
+nothing on the write path should be setting either: the store generates the key
+(§3.2) and owns the version (§6.6).
+
+`pk` is absent from both because §3.2 generates `uuid` keys client-side in Go and
+a client naming its own primary key is how duplicate-key 500s and enumeration
+attacks begin. `readonly:` is the option that means *never accepted from a
+request*, and it is why §3's example writes
+`created_at: { default: now, readonly: true }`: without this rule a client could
+set `created_at` — the sort key — and insert itself at an arbitrary position in
+every cursor page. `version: true` is absent from both because a client that can
+`PATCH` its own version defeats `If-Match` entirely (§3.6); note that this row
+is a row, not a synthesized `readonly:` flag, for the reason §3.6 gives.
+
+#### `UpdateInput` members are `Optional[T]`, not pointers
+
+```go
+type Optional[T any] struct {
+    value   T
+    present bool // the key appeared in the JSON object at all
+    null    bool // the key appeared, carrying the literal null
+}
+
+func (o Optional[T]) Present() bool  // absent (false) vs. sent (true)
+func (o Optional[T]) IsNull() bool   // sent as null
+func (o Optional[T]) Get() (T, bool) // the value, and whether one was sent
+func (o *Optional[T]) UnmarshalJSON([]byte) error
+```
+
+Three states, three answers. `UnmarshalJSON` **is** invoked for the literal
+`null`, which is the whole mechanism: absent leaves `present` false and the
+method is never called; `null` sets `present` and `null`; a value sets `present`
+and `value`. A pointer cannot do this and neither can `**T` — §3.2 records the
+measurement and the earlier false claim. `DisallowUnknownFields` is unaffected:
+it rejects keys the struct does not declare, before any member's
+`UnmarshalJSON` runs.
+
+The store selects the columns for its `UPDATE` from `Present()`, never from a
+nil check, and writes `NULL` for a member where `IsNull()` holds — rejecting it
+with 422 when the field is `required:` (§6.6).
 
 JSON decoding uses `DisallowUnknownFields`: a request carrying a field the input
 does not accept is a 400, not a silent drop. A client discovering that
-`created_at` is ignored is better served by an error than by a surprise.
-
-Without this rule a client could set `created_at` — the sort key — and insert
-itself at an arbitrary position in every cursor page.
+`created_at` is ignored is better served by an error than by a surprise. The
+query-parameter analogue is in §6.9.4.
 
 ### 6.6 Update semantics
 
 `PATCH` only; `PUT` is not generated. Absent means unchanged, explicit `null`
-means set to null (rejected for `required` fields).
+means set to null (rejected for `required` fields). The mechanism that
+distinguishes those two states is `Optional[T]`, specified in §6.5 — not a
+pointer.
 
-**Optimistic concurrency is opt-in via `version: true`.** When present, the
-response carries an `ETag`, `PATCH` requires `If-Match`, and a mismatch is a
-`409`. When absent, updates are last-write-wins — documented, not accidental.
+**Optimistic concurrency is opt-in via `version: true`.** When absent, updates
+are last-write-wins — documented, not accidental. When present, the following
+grammar applies, and it is generated code, not a convention:
+
+- **`ETag: "<version>"`** on **every single-resource response** of a versioned
+  entity — the 200 from get, the 201 from create, the 200 from update. Not on a
+  list response: a list is not a resource with one version. The tag is
+  **strong** — no `W/` prefix — because it is an exact value comparison against
+  a column, not a claim about semantic equivalence of two renderings.
+- **`If-Match` is required on `PATCH`.** Absent is `400` `bad_request`, with
+  `If-Match` named in `fields`. Phase 1 does not emit `428 Precondition
+  Required`: a client that omitted the header and one that sent a broken one
+  have both sent a request lapigo cannot act on, and one status per cause keeps
+  §6.7's table something an implementer can follow.
+- **`If-Match: *` is accepted** and means "any current version": the update
+  proceeds without a version predicate. It is the honest way to say *I know I am
+  overwriting*, and refusing it would push people to read the ETag and echo it
+  back, which is the same thing with an extra round trip.
+- **A weak tag (`W/"3"`), a list of tags, or an unparseable value is `400`.**
+  Never a fallthrough to unconditional update: a client that sent a header it
+  believed was protecting it must not be told the write succeeded unprotected.
+- **A mismatch is `409` `version_conflict`.** The store emits
+  `UPDATE … SET …, version = version + 1 WHERE <pk> = $1 AND version = $2`, and
+  **zero affected rows is a 409**. It is not distinguished from a deleted row:
+  telling the client which of the two happened requires a second query and leaks
+  a little more than it helps; the client re-reads either way.
+- **Create inserts version 1.** Not 0, so that "has a version" and "has been
+  written once" are the same statement, and not a client-supplied value —
+  §6.5 keeps the column out of `CreateInput`.
+- **`DELETE` on a versioned entity also requires `If-Match`**, with the same
+  grammar and the same `409`. Symmetry is the reason: an API where a lost update
+  is refused but a lost *delete* succeeds silently protects the smaller of the
+  two losses. Recorded plainly because it widens this decision's blast radius —
+  it puts a required header on an operation that had none, so `DELETE` on a
+  versioned entity is a breaking change for any client written against the
+  unversioned shape, and step 8's delete handler grows the same parsing and the
+  same `409` path as update.
 
 An update that changes a sort key is permitted and warned about at generation
 time (§3.3 rule 5).
@@ -797,28 +1252,61 @@ One envelope, everywhere:
 ```json
 { "error": { "code": "validation_failed",
              "message": "title is required",
-             "fields": { "title": "required" } } }
+             "fields": { "title": "required" },
+             "request_id": "9f2c1e4a7b0d3f6812a5c9e0d4b7f13a" } }
 ```
 
 | Condition | Status | `code` |
 |---|---|---|
-| Malformed body, unknown field, bad cursor, bad limit | 400 | `bad_request`, `invalid_cursor` |
+| Malformed body, unknown field or query parameter, bad cursor, bad limit, unparseable filter value, bad `If-Match` | 400 | `bad_request`, `invalid_cursor` |
+| Request body over the limit (§6.8) | 413 | `body_too_large` |
+| Missing or non-JSON `Content-Type` on `POST`/`PATCH` | 415 | `unsupported_media_type` |
 | Validation failure | 422 | `validation_failed` |
 | Not found | 404 | `not_found` |
 | Unique or FK violation (`23505`, `23503`) | 409 | `conflict` |
 | `If-Match` mismatch | 409 | `version_conflict` |
+| A hook returning `*hooks.Error` | its `Status`, clamped to 400–599 | its `Code` |
 | Anything else | 500 | `internal` |
 
-A `500` body carries the code and a correlation identifier, never a driver
+A `500` body carries the code and the request identifier, never a driver
 message, a query, a constraint name or a path. The detail is logged. This is
 mechanism, not exhortation: handlers call one `respondError` helper, and a
 `pgx` error never reaches a response except through the mapping above.
+`respondError` tries `errors.As(err, &he)` for `*hooks.Error` **before** the
+generic branch, and applies §6.4's status clamp.
+
+**`request_id` is a fourth member of the envelope on every error, not only on a
+500.** Revision 2 attached a correlation identifier to the 500 alone, which is
+backwards: a 500 is the case a user reports and someone goes looking for; a 400
+they cannot explain is the case they argue about. It costs four bytes of key and
+it is what turns "it returned 422 and I do not know why" into a log lookup. Its
+minting is specified in §6.9.6, together with the `X-Request-Id` header that
+carries it on **every** response, success included.
+
+`fields` is omitted when empty rather than emitted as `null` — it is the one
+member of the envelope that is genuinely optional, because most errors have no
+per-field detail. `code`, `message` and `request_id` are always present.
+
+**413 is its own status, not a 400.** Every reverse proxy in front of a
+generated API — nginx, Caddy, an ALB — already answers an oversized body with
+413 from its own limit. Folding lapigo's limit into 400 would make one cause
+produce two different status codes depending on which limit was crossed first,
+which is precisely the kind of thing that costs an afternoon.
+
+**`http.MaxBytesReader`'s error is wrapped, and the order of the branches
+decides whether the 413 ever appears.** The reader returns
+`*http.MaxBytesError`, but `json.Decoder.Decode` wraps it before the handler
+sees it, so a handler that tests for a decode failure first classifies every
+oversized body as a malformed one and the 413 becomes unreachable. The generated
+handler runs `errors.As(err, &maxErr)` **before** the generic decode branch.
 
 ### 6.8 Resource bounds
 
 Generated code, not advice in documentation:
 
-- `http.MaxBytesReader` on every request body, default 1 MiB.
+- `http.MaxBytesReader` on every request body, default 1 MiB. Exceeding it is
+  `413` `body_too_large`, and §6.7 states the `errors.As` ordering that makes
+  that status reachable at all.
 - `context.WithTimeout` on every query, default 5 s.
 - Scaffolded `main.go` sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`
   and `IdleTimeout`.
@@ -828,6 +1316,240 @@ Generated code, not advice in documentation:
 
 An uncapped request body is the cheapest denial of service against the 4 vCPU
 box this project targets.
+
+### 6.9 The wire contract
+
+§6.7 defines what failure looks like. This section defines everything else, and
+it exists because revision 2 defined none of it: not the list envelope, not the
+success status codes, not the query parameter names, not the filter syntax, not
+the rule mapping a schema field to a JSON key. Those are the public API of every
+project ever generated by this tool, and they were spread between `CLAUDE.md`, a
+French design note and nothing at all. The bar for this section is that two
+implementers working from it produce **byte-identical responses**.
+
+#### 6.9.1 Routes
+
+```
+GET    /articles            list
+POST   /articles            create
+GET    /articles/{id}       get
+PATCH  /articles/{id}       update
+DELETE /articles/{id}       delete
+```
+
+**The collection path is `"/" + Entity.Table`.** This is a ratification of the
+convention `internal/parse/endpoint.go` invented at step 2, not a fresh choice,
+and it holds for two reasons. `table:` is currently the *only* lever a schema
+has over its URLs, so deriving the path from `Entity.Name` instead would remove
+the one knob and add none. And the entity name would not buy the expressiveness
+people imagine it would: both names go through the same identifier grammar
+(`^[A-Za-z_][A-Za-z0-9_]*$`, `internal/parse/names.go`), which forbids `-` and
+`/`, so `/blog-posts` and `/v1/articles` are unreachable from either. The
+widening is an entity-level `path:` key, and it is **deferred to phase 2** as a
+decision, not overlooked: it wants to carry a leading-slash rule, a collision
+check against every other entity's path, and a rule for what happens to
+`{`-bearing text, none of which phase 1 needs.
+
+**The wildcard is named after the primary key column**, not hardcoded to `id`.
+`Entity.Path(EndpointGet)` yields `/articles/{id}` only because that entity's PK
+column happens to be `id`; an entity keyed on `slug` is served at
+`/articles/{slug}` and its handler reads `r.PathValue("slug")`. A handler that
+reads `PathValue("id")` and binds the result to a `slug` column is a line of
+generated code that lies to the person reading it, and §6.2 already records that
+wildcard names are irrelevant to `ServeMux` conflict detection — so honesty here
+is free.
+
+`Path` is a method on `Entity`, never a stored field on `Endpoint` (§2.2).
+
+#### 6.9.2 JSON keys are column names
+
+**One vocabulary, used everywhere a field is named on the wire**: body keys in
+requests and responses, filter query parameter names (§6.9.4), and cursor
+members (§7.4) all use `Field.Column`.
+
+So a `belongsTo` written as `author:` in the schema appears on the wire as
+`author_id` — its column — which is what it is: a foreign key scalar. That
+choice also reserves `author` for phase 1.5's relation expansion, where every
+ecosystem that has solved this puts the expanded object. Having `author` mean
+the scalar in phase 1 and the object in 1.5 would be a breaking change scheduled
+in advance.
+
+**No camelCase conversion.** Columns are snake_case, so converting would invent
+a fourth name for a field that already has three (`Name`, `Column`, `GoName`),
+and the conversion is not even well defined: `x__y` has no unambiguous camel
+form and no unambiguous inverse. One name, no round-trip.
+
+Two mechanical consequences for the templates:
+
+- **Every generated struct field carries an explicit `json:"…"` tag.** Never
+  relying on Go's default, which is the Go field name and therefore
+  `AuthorID` — a fourth spelling arriving by omission.
+- **No `omitempty` anywhere in a model.** A nullable column holding NULL must
+  serialise as `"body": null`; with `omitempty` it vanishes from the object
+  entirely, and a client cannot distinguish "no body" from "this field does not
+  exist in this version of the API". §6.7's `fields` is the single documented
+  exception, and it is in the error envelope, not a model.
+
+#### 6.9.3 Success responses
+
+**List** — `200`:
+
+```json
+{ "items": [ { "id": "…", "title": "…" } ],
+  "next": "eyJ2IjoxLCJlIjoiYXJ0aWNsZSI…" }
+```
+
+- **`items` is never `null`.** A nil Go slice marshals to `null`, and a client
+  looping over `null` is a crash in every language that has ever consumed a JSON
+  API. The store returns a made slice — `make([]T, 0, limit)` — so an empty page
+  is `[]`. This is a property of the store, not of the handler: a handler-side
+  `if items == nil` is a patch that the next code path forgets.
+- **`next` is always present**, and is `null` on the last page. **No
+  `omitempty`.** A client testing `"next" in response` must be able to trust the
+  key's existence; a cursor that disappears when it is empty makes "last page"
+  and "old server" the same observation.
+- **A single resource is the bare object**, not `{"item": …}`. There is nothing
+  to put beside it, and a wrapper that carries no second member is ceremony.
+
+**Get** — `200`, the object.
+
+**Create** — `201`, the **full object** in the body, plus `Location`.
+
+- `Location` is the **detail path** for the created row — `Entity.Path` for the
+  `Get` kind with the wildcard replaced by the primary key value, passed through
+  `url.PathEscape`. Escaping is not optional: a `slug` primary key can contain
+  `/`, `?` or `#`, and an unescaped one produces a header that points somewhere
+  else entirely.
+- It is **relative** (`/articles/9f2c…`), not absolute. Building an absolute URL
+  requires trusting `Host` and `X-Forwarded-Proto`, which is a header the client
+  controls; a generator that ships to everyone must not bake in a
+  reflected-host redirect.
+- **No `Location` when the entity declares no `get` endpoint.** `endpoints:
+  [list, create]` is legal (§6.2), and a `Location` pointing at a 404 is worse
+  than none. `201` without `Location` is legal HTTP.
+
+**Update** — `200`, the full object.
+
+**Delete** — `204`, **no body**, and no `ETag`: there is no resource left to
+tag. Deleting a row that is not there is **`404`**, not an idempotent `204`.
+Phase 1's delete is a single `DELETE … RETURNING` whose zero-row result the
+store already has to inspect, so the 404 costs nothing; and a 204 for an absent
+row hides a client bug — the same reasoning §6.8 uses to
+reject clamping an out-of-range `limit`.
+
+On a versioned entity, every single-resource response above — the `200` from
+get, the `201` from create, the `200` from update — also carries an `ETag`, and
+`PATCH` and `DELETE` require `If-Match`. §6.6 states that grammar and its `409`.
+
+#### 6.9.4 Query parameters
+
+Flat, one parameter per filter, no operator syntax and no nesting:
+
+```
+GET /articles?status=draft&author_id=9f2c…&limit=20&after=eyJ2Ijox…
+```
+
+- **Filter parameter names are column names** (§6.9.2), drawn from the entity's
+  declared `filters:` — the whitelist §3.4 already defines. A request selects
+  which whitelisted column; it can never name one.
+- **`limit` and `after` are reserved wire names.** A filter whose column
+  resolves to either is a **validator error with a position** on the `filters:`
+  entry, per §5.6's "reject, never mangle". The alternative is renaming the
+  user's parameter behind their back, which makes the wire name a function of
+  the generator version — the same failure mangling causes for Go identifiers.
+- **`limit`** defaults to 20 and is capped at 100, rejected rather than clamped
+  (§6.8). **`after`** carries the opaque cursor (§7.4); any decode failure is
+  `400 invalid_cursor`.
+
+**Per-type value parsing.** Every failure below is a `400`, with the parameter
+name in `fields`. There is no lenient path — a filter value lapigo cannot parse
+is not "no filter".
+
+| Type | Accepted | Rejected |
+|---|---|---|
+| `uuid` | canonical `8-4-4-4-12` hyphenated form | braces, `urn:uuid:`, unhyphenated |
+| `int` / `bigint` | `strconv.ParseInt` at the column's bit size | anything out of range — overflow is a 400, never a silent wrap |
+| `float` | a finite `strconv.ParseFloat` | `NaN`, `Inf`, `-Inf` |
+| `bool` | exactly `true` or `false` | `1`, `t`, `TRUE`, and the rest of `ParseBool`'s laxity |
+| `decimal` | a numeric literal `pgtype.Numeric` accepts | — |
+| `timestamp` / `date` | RFC 3339, normalised to UTC before binding | anything else |
+| `enum` | one of the field's declared values | everything else |
+| `json` | — | not filterable at all (open question 2) |
+
+Three of those rows are not fussiness:
+
+- **`NaN` and `Inf` compare false against every value including themselves**, so
+  `?score=NaN` would return an empty page with a `200` and no indication that
+  the filter was meaningless. Rejecting at the edge is the only place the user
+  finds out.
+- **`ParseBool`'s laxity** would make `?published=1` work and `?published=yes`
+  fail, which is a rule nobody can remember and no client library agrees on.
+- **An undeclared enum value is the worst available outcome if accepted**:
+  `?status=drfat` returns `200` with zero rows, and the typo is indistinguishable
+  from an empty result. `400` names the parameter and the schema already holds
+  the list of legal values, so the message can print them.
+
+**A repeated parameter is a `400`.** `url.Values.Get` silently returns the first
+value and discards the rest, so `?status=draft&status=published` would filter on
+`draft` and throw the user's second intent away without a word. The handler
+checks `len(values[k]) > 1` before reading.
+
+**An empty value is a `400`.** `?status=` is neither "unfiltered" nor
+`status IS NULL`. Treating it as unfiltered makes a client bug look like a wider
+query; treating it as `IS NULL` is worse, because it needs a per-parameter
+branch in the SQL, and **§7.3 bans exactly the idiom that branch reaches for**
+(`($1 IS NULL OR col = $1)`, measured at a 66-fold regression). Stated plainly so
+nobody reinvents it: **phase 1 offers no way to filter for NULL.** A schema that
+needs one declares a boolean companion column, or waits for the operator syntax
+in a later phase.
+
+**An unknown query parameter is a `400`**, with the offending name in `fields`.
+§6.5's justification for `DisallowUnknownFields` transfers verbatim — a client
+discovering that a parameter is ignored is better served by an error than by a
+surprise, and a typo'd filter name that silently widens a query is a data leak in
+the shape of a feature. Honestly: this means that pasting a URL carrying
+`utm_source` into a generated API returns a `400`. That is the cost, it is
+accepted, and it is written down here rather than discovered.
+
+#### 6.9.5 Request preconditions
+
+**`POST` and `PATCH` require `Content-Type: application/json`**, or `415`
+`unsupported_media_type`. The header is parsed with `mime.ParseMediaType`, not
+compared as a string, so `application/json; charset=utf-8` — which several HTTP
+clients send by default — is accepted; only the media type is compared, and it
+is compared case-insensitively as the RFC requires. A naive `==` would reject
+half the world's clients for a suffix that means nothing.
+
+Requiring the header at all is CSRF hygiene: `application/json` is not a content
+type an HTML form can produce, so a generated API is not driveable by a
+cross-origin form post even before phase 3 adds auth.
+
+`GET` and `DELETE` carry no body and no `Content-Type` requirement.
+
+#### 6.9.6 Request correlation
+
+**Every response carries `X-Request-Id`**, success and failure alike, and every
+error envelope repeats it as `request_id` (§6.7).
+
+**It is minted by a middleware in the generated router, into the request
+context** — not inside `respondError`. That is the whole point: a log line
+written while the query ran, before anything failed, has to carry the same
+identifier as the response the user is holding. An identifier minted at the
+moment of responding cannot correlate anything that happened earlier in its own
+request, which is most of what a person is looking for.
+
+**16 bytes from `crypto/rand`, hex-encoded** — 32 characters. Not
+UUID-formatted: the hyphenated shape is read by tooling and by people as a UUID,
+and a UUID has version and variant semantics this value does not have. Something
+that is not a v4 UUID should not look like one.
+
+**An inbound `X-Request-Id` is adopted only if it matches 1–128 characters of
+`[A-Za-z0-9_-]`**; anything else is discarded and a fresh identifier minted, with
+no error to the client. Adoption is what lets a request keep its identity across
+a proxy or an upstream service, and the pattern is what stops the header being a
+log-injection vector: the value reaches a log line, and a client-supplied `\n`
+in a log line forges log entries. This is generated code shipped to every user
+of lapigo, so an unvalidated string reaching a log line is not one project's bug.
 
 ---
 
@@ -929,6 +1651,9 @@ The entity belongs in the fingerprint. Revision 1 omitted it, so two entities
 sharing a sort and filter shape — the very shape used as this document's example
 — produced interchangeable cursors.
 
+A cursor's member keys are column names, like every other name on the wire
+(§6.9.2).
+
 The fingerprint is computed over a **canonical form**: filters sorted by name,
 values in declaration order. Iterating a Go map to build it would make a client
 reject its own cursor nondeterministically.
@@ -1016,6 +1741,14 @@ Test-driven. The failing test comes first.
   `make check` on a machine with no Postgres stays green.
 - **Templates** — golden files under `testdata/<case>/` with the `-update` flag
   convention, so regeneration is reviewed as a diff.
+- **Declared names equal rendered names.** The fixture matrix of §5.6 is
+  rendered, its output parsed with `go/ast`, and the set of top-level
+  declarations per package asserted **equal** — in both directions — to the set
+  §5.6's table predicts. A subset assertion in either direction leaves one drift
+  direction unchecked. A second test asserts the matrix itself covers each
+  declaration-changing option in both its present and absent states, so adding
+  an option without extending the matrix fails instead of quietly narrowing what
+  the equality test can see.
 - **Generated code compiles.** Golden output is written to a temp module and
   built with `go build`. Revision 1 promised a `go/types` tier with "no
   subprocess"; generated code imports pgx, and resolving that requires
@@ -1032,6 +1765,17 @@ Test-driven. The failing test comes first.
   - a forged, truncated, foreign-entity or wrong-typed cursor yields 400, never
     a panic — with a fuzz test behind that guarantee;
   - `DisallowUnknownFields` rejects an attempt to set a `readonly` field.
+- **The wire contract (§6.9)**, asserted on whole response bytes, not on
+  substrings: an empty list page is `{"items":[],"next":null}` and never
+  `"items":null`; a nullable field holding NULL is present as `null` and does not
+  vanish; `Location` after a create with a `/`-bearing primary key is escaped;
+  a repeated, empty, unknown, or unparseable query parameter is `400` with the
+  parameter named in `fields`; an oversized body is `413` and not `400`;
+  `application/json; charset=utf-8` is accepted and `text/plain` is `415`; an
+  inbound `X-Request-Id` containing a newline is discarded rather than echoed.
+- **Optimistic concurrency (§6.6)**, against a real Postgres: a stale `If-Match`
+  is `409` and leaves the row unchanged; `*` succeeds; a weak tag is `400`;
+  create yields version 1 and an `ETag` matching it.
 
 ### 8.1 The performance assertion, done properly
 
@@ -1068,17 +1812,13 @@ because it is believed.
    claim about a database lapigo neither created nor inspected — does not
    apply now that DDL generation is phase 1: lapigo creates exactly what the
    key declares.
-6. **A `version: true` column may be nullable.** §3's own example writes
-   `version: { type: int, version: true }` with no `required:`, so the DDL
-   correctly emits a nullable integer. But a row whose version is NULL makes
-   every `version = $n` comparison yield unknown, so §6.6's `If-Match` update
-   matches zero rows and returns `409` forever — §3.3 rule 3's reasoning
-   ("SQL comparison against NULL yields unknown") applied to a different
-   column. Surfaced by the step 4 review against a live database; it bites at
-   step 7 (the store), not at the emitter, so the DDL is not where it is
-   decided: either the validator requires a version column to carry
-   `required: true` as well, or §6.6 defines NULL-version update semantics.
-   Must be settled before step 7 begins.
+6. **Resolved 2026-09-10 — the version column is constrained in §3.6.** The
+   nullable case this question raised was one of four ways to declare a version
+   column the store cannot work with; the type and the primary-key overlap were
+   found alongside it, and all four are settled together by validator rules
+   rather than by NULL-version update semantics. §6.6 states the ETag and
+   `If-Match` grammar that depends on them, and §6.5's table carries the input
+   exclusion.
 
 ---
 
@@ -1109,20 +1849,36 @@ because the templates it names did not exist yet, and nothing links the two: a
 method added to a template without a matching entry there produces a schema
 that validates clean and fails to compile only once regenerated. Per CLAUDE.md
 an invariant that matters is checked by something, not asserted in a comment —
-so the first commit of step 5 must add a test that derives the reserved set
-from the templates and fails when they disagree.
+so the first commit of step 5 must close it.
+
+**The mechanism this document used to state for that is not achievable, and
+§5.6 now states the one that is.** "Derive the reserved set from the templates"
+cannot be done from template text: `text/template` is not parseable Go, and the
+identifier a template emits is a function of runtime data. The derivation runs
+in the other direction — render §5.6's fixture matrix, parse the *output* with
+`go/ast`, and assert set equality per package in both directions (§5.6, §8).
+The fixture matrix is part of the same commit, because a matrix that omits an
+option hides every declaration that option controls.
+
+The collision set §5.6 enumerates spans four packages, and `httpapi`'s share of
+it lands with step 8; the equality test's table is extended in that same commit
+rather than left to drift until someone notices.
 
 ---
 
 ## 11. What must be true before phase 1 is done
 
 - `lapigo new demo && lapigo gen && psql -f migrations/0001_init.sql && go run ./cmd/api`
-  serves a working CRUD API.
+  serves a working CRUD API — **with no `go mod tidy` and no network access**,
+  which is what §6.1's pinned `go.mod` requires and its embedded `go.sum` makes
+  possible.
 - Paginating a 500 000 row table reads a constant number of buffers per page,
   independent of depth, proven by the §8.1 assertion.
 - No generated SQL contains an interpolated identifier or value.
-- Every error response is the §6.7 envelope, and no `500` body contains a driver
-  message.
+- Every error response is the §6.7 envelope — `request_id` included — and no
+  `500` body contains a driver message.
+- Every success response matches §6.9: `items` is never `null`, `next` is always
+  present, and no two implementers of that section could differ in a byte.
 
 ---
 
@@ -1143,7 +1899,7 @@ Recorded so the reasoning is not rediscovered.
 | Input projection, update semantics, error envelope, resource bounds specified | Six load-bearing designs an implementer would otherwise have had to invent. |
 | `Field`, `Filter`, `Relation`, `Endpoint` defined; sort keys hold `*Field` | The IR was not implementable, and would have forced lookups inside templates. |
 | `Imports` moved from `Entity` to the output file | An entity spans four packages with different needs. |
-| `FormatOnly: true` dropped | Milliseconds of build time bought with a permanent correctness risk and no correction pass. |
+| `FormatOnly: true` dropped | Milliseconds of build time bought with a permanent correctness risk and no correction pass. **Reversed on 2026-09-10 — all three premises were wrong; see §5.2 and §13.** |
 | Tabs rejected in the schema | goccy under-counts tab columns; the test revision 1 promised would have failed against the real library. |
 | Cursor: entity added to the fingerprint, canonical form specified, UTC normalisation, no lexical comparison | Cross-entity replay; nondeterministic fingerprints; cursors unstable across hosts because pgx scans into `time.Local`. |
 | HMAC deferred to 1.5 | Key storage, key identifier and rotation were unspecified while the server was required to fail closed without a key. |
@@ -1174,4 +1930,14 @@ A change here is a change to the contract — record it, do not make it silently
 | 2026-09-09 | §2.2 | `Field.EnumValues` is `[]EnumValue{Name, GoName}`, not `[]source.At[string]` | Issue #24: nothing computed an enum value's Go identifier, so `values: [in-progress, in_progress]` — two values that case-convert to the same generator constant — validated clean and would have produced uncompilable code. §5.6's collision check needs a real identifier per value to compare. |
 | 2026-09-09 | §3.1 (parse rules) | An enum value whose computed Go identifier is empty (e.g. `"---"`, every character a separator) is rejected, alongside the existing non-empty/no-control-character rules | The enum-value counterpart of the field-name check below: `"---"` is legal enum-value text by the existing rules but names nothing a generated constant could carry. |
 | 2026-09-09 | §5.6 | The package-wide collision check compares every generated top-level declaration together — entity structs, enum types, *and* one enum constant (`EnumGoType + EnumValue.GoName`) per value — not enum types and entity structs alone; a name already rejected by the identifier grammar (leading digit aside) is excluded from this comparison rather than compared using its Go name anyway | An enum constant's name concatenates two variable-length prefixes (`entityGoName + goName(fieldName) + goName(value)`), which is ambiguous: field `state` value `x_y` and field `state_x` value `y` both produce `TaskStateXY`. Checking only entity and enum-*type* names (as a first pass at this issue did) missed that, and every within-field, cross-field, type-vs-constant, and constant-vs-entity-struct pairing besides (PR #39 review finding F1). Comparing an already-invalid name's mangled Go form against a valid sibling's produced a second diagnostic blaming the valid one for the invalid one's own defect (PR #39 review finding F2); excluding it entirely is more useful than merely correcting the message, since the invalid name already has its own diagnostic. |
+| 2026-09-10 | §2.2, §3.2, §6.5 | `UpdateInput` members are a generated `Optional[T]` implementing `json.Unmarshaler`, not pointers; the "a pointer distinguishes absent from explicit null" claim is removed from §3.2 and §6.5 and replaced by the measurement that disproves it; the model keeps the pointer form, restated as a *marshalling* rule | Issue #15: `encoding/json` sets a pointer to `nil` for the literal `null`, so `{}` and `{"body":null}` are indistinguishable after decoding, and `**T` fails the same way. §6.6 required semantics the prescribed mechanism could not produce. The false claim appeared in two places, which is why §3.2 now names the measurement instead of restating the conclusion. |
+| 2026-09-10 | §3.1, §3 example, §6.5 | `default:` means "supplied at insert when the request omits the field", not "never settable"; `readonly:` is the option that makes a field unsettable, and §3's `created_at` now carries it | Issue #16: with §6.5 building the update input by subtraction, `default:`'s create-time exclusion propagated, so `status: {default: draft}` produced a CRUD API in which status could never be changed. The two options were near-synonyms and the format had lost its commonest field shape — optional, with a fallback. Consequence for merged code: `internal/validate/sort.go`'s `\|\| f.Default != nil` exemption from the mutable-sort-key warning is now wrong and is corrected under its own issue, failing test first. |
+| 2026-09-10 | §6.5 | Input projection is a **table**, evaluated first-match-wins, not a subtraction from the field list | Issue #16 and issue #18: a subtraction has one knob per field and can only remove, never re-add or mark optional. It manufactured two of the three defects settled here — `default:` propagating, and the version column having no row to be excluded by. |
+| 2026-09-10 | §6.9 (new), §2.2, §6.7 | The wire contract: list envelope `{"items":…,"next":…}` with `items` never null and `next` never `omitempty`; 201 + relative escaped `Location` on create (omitted when no `get` endpoint); 204 and a 404 for an absent row on delete; flat query parameters with `limit` and `after` reserved; per-type value parsing with every failure a 400; repeated, empty and unknown parameters rejected; JSON key = column name with explicit tags and no `omitempty`; `request_id` on every error plus `X-Request-Id` on every response; 413 `body_too_large`; `Content-Type` required on POST/PATCH | Issue #17: revision 2 defined the error envelope and nothing about success. The list body, the status codes, the parameter names, the filter syntax and the JSON key rule are the public API of every generated project, and they lived in `CLAUDE.md`, a French design note, or nowhere. `NaN`/`Inf` and an undeclared enum value both return `200` with zero rows if accepted, which is the worst available outcome; `?status=` cannot mean `IS NULL` because §7.3 bans the idiom that would implement it. `request_id` minted in `respondError` cannot correlate a log line written earlier in the same request, so it is minted by a router middleware into the context. |
+| 2026-09-10 | §2.2, §6.9.1 | `ir.Endpoint` loses its stored `Path`; `Entity.Path(EndpointKind)` derives it, and the detail path's wildcard is named after the primary key **column** rather than hardcoded `{id}`. The `/<table>` source is ratified; an entity-level `path:` key is deferred to phase 2 | Issue #23: step 2 invented the convention and its own doc comment said so. `ir.Field` already refuses to store `GoType`/`PgType` for exactly this reason, and a `Path` computed during entity resolution can freeze a `belongsTo` primary key's placeholder column before `resolvePendingRelations` finalises it. `PathValue("id")` bound to a `slug` column is generated code that lies. `table:` is the only lever a schema has over its URLs, and `identifierPattern` forbids `-` and `/`, so deriving from the entity name would buy nothing. |
+| 2026-09-10 | §3.6 (new), §3.1, §6.5, §6.6, §9.6 | A `version:` column must be `int` or `bigint`, `required: true`, and not the primary key; it is excluded from both input types by its own §6.5 row — explicitly **not** by a synthesized `readonly:` flag; §6.6 gains the ETag/`If-Match` grammar, including `DELETE` on a versioned entity. Open question 6 resolved | Issue #18: measured against the merged parser, `id: {type: uuid, pk: true, version: true}`, `type: text` and `type: json` all validate clean, and step 7 would emit `SET version = version + 1` against each. A nullable version makes every comparison unknown, so `If-Match` returns 409 forever. A client that can PATCH its own version defeats `If-Match` entirely. The flag was rejected as the exclusion mechanism because `internal/validate/sort.go` exempts `ReadOnly` fields from the mutable-sort-key warning, and a version column is the worst possible sort key in the format. |
+| 2026-09-10 | §5.2, §2.1, §2.3, §6.1, §11, §12 | `imports.Process` runs with `FormatOnly: true`; step 6's computed import set is authoritative and the Go compiler is the correction pass. `lapigo new` writes a `go.mod` with the pgx version pinned as a build-time constant plus pgx's indirect requires, and an embedded `go.sum`. This reverses §12's own reversal | Issue #19: measured, with resolution enabled, against a `go.mod` correctly requiring `pgx/v5 v5.10.0`, goimports added the **pre-v5** `github.com/jackc/pgx` from the machine's cache and exited 0; against an empty cache it dropped the pgx import entirely and exited 0. Same schema, same `go.mod`, different bytes per developer — a §5.3 violation no sorting fixes. §12's stated reason was "milliseconds bought with a permanent correctness risk and no correction pass": resolution costs 135–550 ms per file, **is** the correctness risk, and §8's `go build` tier is the correction pass, catching both `undefined: pgx` and `imported and not used`. Without the embedded `go.sum`, `go build` fails with `missing go.sum entry`; without the indirect requires, with `updates to go.mod needed`. |
+| 2026-09-10 | §6.3, §6.4, §6.7 | The hook interface is stated in full for all five operations: `BeforeDelete` takes the id only, `AfterDelete`/`AfterDeleteCommitted` take the row from `DELETE … RETURNING`, `BeforeUpdate` takes no pre-image, and there are **no** `List`/`Get` hooks in phase 1. A `hooks.Error{Status, Code, Message, Fields}` carries a hook's own status into `respondError`, which matches it with `errors.As` and clamps a Status outside 400–599 to 500 | Issue #20: "same shape for Update and Delete" is not a shape anyone can copy — there is no `DeleteInput`. A pre-image for `BeforeDelete` or `BeforeUpdate` would force a `SELECT … FOR UPDATE` on every write of every entity, because the store cannot know at generation time whether a user's hook is still the no-op — the blanket-tax reasoning that rejected `COUNT(*)` and offset pagination. Read hooks have no transaction to receive, so their signature is an open question rather than a copy-paste, and the payoff people want from them is relation expansion, deferred to 1.5. Without the typed error a user's own validation rejection was emitted as a 500. The `Present()` mechanism replaces the pointer test an earlier analysis assumed (see the §6.5 row above). |
+| 2026-09-10 | §5.4, §5.5, §6.1 | The lock carries two entry kinds: `generated` (`internal/gen/**`, checksum of the file as written, compared every run) and `emitted-once` (`migrations/0001_init.sql`, checksum of what lapigo **emitted**, never compared to disk). The migration warns when the schema has moved, stops when the file is gone, and is never rewritten. `Generate`'s map contains Go files only. §5.5 row 1 reads "present **and** differs", and the entry-present/file-absent rows are added, resolved by kind | Issue #21: the lock conflated "was this hand-edited?" — which protects a file about to be overwritten — with "is this behind the schema?", which is provenance and is answerable from the emitted checksum, since a hand edit does not move it and a schema change does. The migration is never overwritten, so the first question manufactures a hard stop on the state open question 4 already treats as normal. Read literally, "checksum differs" was true of a missing file, so `lapigo gen` demanded `--force` after `rm -rf internal/gen`. `ddl.Emit` is pure, total and deterministic, so re-emitting every run is free. Keeping the migration out of the map keeps every entry a Go file with no exception to carry through §5.2, §5.3 and §5.5. |
+| 2026-09-10 | §5.6, §6.3, §10 | §5.6 enumerates the generated identifier set per package — `model`: `E`, `ECreateInput`, `EUpdateInput`, `EF`, `EF<Value>`; `store`: `EStore`, `EListQuery`; `hooks`: `EHooks`, `NoopEHooks`; `httpapi` with step 8 — compared **within** a package, attributed to the entity's `NameSpan`. §6.3's user-side example is corrected from one `gen` package to `hooks`/`model`. §10's "derive from the templates" is replaced by rendering a fixture matrix, parsing the output with `go/ast`, and asserting set equality per package in both directions | Issue #22: §5.6 promised "reject, never mangle" for a collision class it never enumerated, so entity `article` and entity `article_create_input` both yield `ArticleCreateInput` and validate clean. §6.1's four-package tree and §6.3's single-package example gave different collision domains and the tree is authoritative — cross-package comparison would reject a legal schema, which "reject, never mangle" does not license. `NoopEHooks` is a prefix form, so a known-suffix shortcut misses it. Deriving from template text is impossible: `text/template` is not parseable Go and the identifier depends on runtime data. Set equality rather than subset, because a subset in either direction leaves one drift direction unchecked; the fixture matrix needs each declaration-changing option present **and** absent, or a version-only declaration stays invisible in a way that looks like a pass. |
 | 2026-09-10 | §2.2 | `Entity`'s struct listing gained the `Indexes []Index` field it was already carrying in code (added by the 2026-08-22 §3.5 amendment above, but never reflected here); `EndpointKind` gained `Method() string`; `Entity` gained `HasList`/`HasGet`/`HasCreate`/`HasUpdate`/`HasDelete`; `Entity` gained `SortedFilters() []Filter`; `FilterOp` gained `SQL() string` | Issue #25: the templates step 5+ will consume were about to inline `"METHOD /path"` strings, per-kind boolean chains, an ad hoc sort for §7.4's fingerprint, and a hardcoded `"="`, each in template code — exactly what §5.1 forbids. `Entity.Filters` itself stays in declaration order; `internal/ddl/ddl.go`'s `indexColumnLists` derives one index per declared filter in that order, so the canonical by-name view §7.4 needs is a separate method, not a sort in place. |
