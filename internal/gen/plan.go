@@ -111,6 +111,15 @@ func plan(s *ir.Schema, modulePath string) ([]OutputFile, error) {
 	}
 	files = append(files, hooksFiles...)
 
+	// store last, after the packages it imports: the plan's order is the
+	// order the generated tree reads in, and model comes before the hooks
+	// that name its types and the store that fills them (spec §6.1).
+	storeFiles, err := planStoreCursorFiles(s, modulePath)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, storeFiles...)
+
 	return files, nil
 }
 
