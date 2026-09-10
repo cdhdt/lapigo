@@ -67,6 +67,20 @@ var goldenCases = []string{
 	"sort_key_readonly_exempt_default_warns",
 
 	"filter_json",
+
+	// filter_reserved_limit and filter_reserved_after are issue #53: spec
+	// §6.9.4 reserves the query-parameter names "limit" and "after" for
+	// pagination, so a filter whose wire name (Field.Column, per §6.9.2) is
+	// either would be silently shadowed by pagination -- the request would
+	// either filter on nothing or break pagination, depending on parse
+	// order. Both fixtures declare a *scalar* field named "limit"/"after",
+	// whose column equals the field name (internal/parse/field.go), so the
+	// collision is direct. filter_reserved_belongs_to_ok in successFixtures
+	// below is the counterpart this rule needs: a belongsTo relation named
+	// "limit" is legal, because its column is "limit_id", not "limit".
+	"filter_reserved_limit",
+	"filter_reserved_after",
+
 	"field_method_collision",
 	"relation_field_collision",
 	"entity_name_collision",
@@ -223,6 +237,13 @@ var successFixtures = map[string]bool{
 	// the check itself; validatePackageNames compares every enum constant
 	// against every other one in the whole schema.
 	"enum_value_same_raw_across_fields": true,
+
+	// filter_reserved_belongs_to_ok is the false-positive check for issue
+	// #53's rule: a belongsTo relation named "limit" resolves to the field
+	// Column "limit_id" (internal/parse/relation.go's
+	// `Column: name.Value + "_id"`), not "limit", so filtering on it must
+	// stay legal even though the reserved check now exists.
+	"filter_reserved_belongs_to_ok": true,
 }
 
 // TestValidate_NoOrphanFixtures fails when a testdata/*.yaml file is

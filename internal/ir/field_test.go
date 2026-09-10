@@ -85,6 +85,35 @@ func TestField_GoType(t *testing.T) {
 	}
 }
 
+// TestField_ValueGoType pins ValueGoType against GoType's own cases: same
+// Field values, but nullability must never surface in the result, because
+// ValueGoType answers for Optional[T]'s T (spec §6.5), not for the
+// marshalled model. A nullable and a non-nullable field of the same
+// FieldType must produce the identical literal.
+func TestField_ValueGoType(t *testing.T) {
+	tests := []struct {
+		name string
+		f    *Field
+		want string
+	}{
+		{"nullable scalar strips nullability", &Field{Type: FieldTypeString, Nullable: true}, "string"},
+		{"non-nullable scalar, same FieldType, identical literal", &Field{Type: FieldTypeString}, "string"},
+		{"enum uses EnumGoType, not FieldType's placeholder",
+			&Field{Type: FieldTypeEnum, EnumGoType: "ArticleStatus"}, "ArticleStatus"},
+		{"nullable enum stays bare EnumGoType, never *EnumGoType",
+			&Field{Type: FieldTypeEnum, EnumGoType: "ArticleStatus", Nullable: true}, "ArticleStatus"},
+		{"belongsTo foreign key column uses the FK scalar's FieldTypeUUID placeholder",
+			&Field{Type: FieldTypeUUID, Nullable: true}, "pgtype.UUID"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.f.ValueGoType(); got != tt.want {
+				t.Errorf("ValueGoType() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestField_PgType(t *testing.T) {
 	max200 := 200
 	tests := []struct {
