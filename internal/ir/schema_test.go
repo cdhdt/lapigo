@@ -59,3 +59,55 @@ func TestSchema_Lookup_NilReceiver(t *testing.T) {
 		t.Errorf("Lookup on a nil Schema = %+v, want nil, not a panic", got)
 	}
 }
+
+// TestEntity_SortedFilters_ReordersByName pins spec §7.4's canonical cursor
+// fingerprint form: filters sorted by field name. Filters is declared out of
+// name order here specifically so a SortedFilters that forgot to sort, or
+// that sorted by declaration position instead of name, would fail this.
+func TestEntity_SortedFilters_ReordersByName(t *testing.T) {
+	zeta := &Field{Name: source.Bare("zeta")}
+	alpha := &Field{Name: source.Bare("alpha")}
+	mid := &Field{Name: source.Bare("mid")}
+	e := &Entity{
+		Name: "article",
+		Filters: []Filter{
+			{Field: zeta},
+			{Field: alpha},
+			{Field: mid},
+		},
+	}
+
+	got := e.SortedFilters()
+
+	if len(got) != 3 || got[0].Field != alpha || got[1].Field != mid || got[2].Field != zeta {
+		t.Fatalf("SortedFilters() = %v, want [alpha, mid, zeta] by field name", filterNames(got))
+	}
+}
+
+// TestEntity_SortedFilters_LeavesDeclarationOrderUntouched pins that
+// SortedFilters returns a separate view: internal/ddl's indexColumnLists
+// depends on Entity.Filters staying in declaration order (each declared
+// filter becomes one derived index, spec §7.2), so a SortedFilters that
+// sorted e.Filters in place would silently reorder the emitted index set.
+func TestEntity_SortedFilters_LeavesDeclarationOrderUntouched(t *testing.T) {
+	zeta := &Field{Name: source.Bare("zeta")}
+	alpha := &Field{Name: source.Bare("alpha")}
+	e := &Entity{
+		Name:    "article",
+		Filters: []Filter{{Field: zeta}, {Field: alpha}},
+	}
+
+	_ = e.SortedFilters()
+
+	if e.Filters[0].Field != zeta || e.Filters[1].Field != alpha {
+		t.Fatalf("Filters after SortedFilters() = %v, want declaration order [zeta, alpha] untouched", filterNames(e.Filters))
+	}
+}
+
+func filterNames(fs []Filter) []string {
+	names := make([]string, len(fs))
+	for i, f := range fs {
+		names[i] = f.Field.Name.Value
+	}
+	return names
+}

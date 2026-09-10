@@ -25,6 +25,21 @@ func (op FilterOp) String() string {
 	}
 }
 
+// SQL returns the SQL comparison operator op renders as in a WHERE clause,
+// e.g. "=" for FilterOpEq. This is distinct from String, which returns the
+// diagnostic keyword ("eq"): a WHERE-clause renderer needs op's SQL spelling
+// without hardcoding the single-operator assumption FilterOp exists as a
+// closed enum to prevent, ready for the day a second operator exists to
+// choose between.
+func (op FilterOp) SQL() string {
+	switch op {
+	case FilterOpEq:
+		return "="
+	default:
+		return fmt.Sprintf("<unknown FilterOp %d>", int(op))
+	}
+}
+
 // Filter is one whitelisted equality filter on an Entity (spec §3.4). A
 // request selects which whitelisted column to filter on; it can never name
 // one. Field is a resolved *Field pointer, not a name, for the same reason

@@ -1,6 +1,10 @@
 package ir
 
-import "github.com/cdhdt/lapigo/internal/source"
+import (
+	"sort"
+
+	"github.com/cdhdt/lapigo/internal/source"
+)
 
 // Schema is the fully resolved form of one lapigo.yaml file: every default
 // expanded, every relation resolved to its target Entity, every sort key and
@@ -60,6 +64,26 @@ type Entity struct {
 	Indexes   []Index // declared composite indexes, declaration order (spec §3.5); the derived set of spec §7.2 is NOT stored — the DDL emitter computes it
 	Relations []Relation
 	Endpoints []Endpoint
+}
+
+// SortedFilters returns a copy of e.Filters sorted by field name, for spec
+// §7.4's cursor fingerprint, which is computed over a canonical form:
+// "filters sorted by name, values in declaration order."
+//
+// It does not sort e.Filters in place, and does not return e.Filters itself
+// even when already sorted: internal/ddl's indexColumnLists
+// (internal/ddl/ddl.go) walks e.Filters in declaration order to derive one
+// index per declared filter (spec §7.2), so that field's own order must
+// survive untouched. Field names are unique within an entity — Schema.Freeze
+// rejects a duplicate before this method could ever be called on a frozen
+// Schema — so the sort needs no tiebreaker to stay deterministic.
+func (e *Entity) SortedFilters() []Filter {
+	sorted := make([]Filter, len(e.Filters))
+	copy(sorted, e.Filters)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Field.Name.Value < sorted[j].Field.Name.Value
+	})
+	return sorted
 }
 
 // Lookup returns the field named name, or nil if the entity has none. It
