@@ -1,12 +1,13 @@
-// Package gen owns the write half of code generation: staging rendered Go
-// files under internal/.lapigo-staging, swapping them into internal/gen,
-// recovering from a process that died mid-swap, and maintaining
-// .lapigo.lock (spec sections 5.4, 5.5).
+// The write half of this package -- this file and write.go -- stages
+// rendered Go files under internal/.lapigo-staging, swaps them into
+// internal/gen, recovers from a process that died mid-swap, and maintains
+// .lapigo.lock (spec §5.4, §5.5).
 //
-// This package never renders anything. Render-to-memory (templates,
-// text/template, formatting) is a separate concern that hands this package
-// a map[string][]byte; Write and Recover are fully exercised with synthetic
-// content and no schema, no IR, and no template at all.
+// It renders nothing. Render-to-memory hands it a map[string][]byte, so
+// Write and Recover are fully exercised with synthetic content and no
+// schema, no IR and no template at all -- which is why the two halves of
+// step 5 could be built independently.
+
 package gen
 
 import (

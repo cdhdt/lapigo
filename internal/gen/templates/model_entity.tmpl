@@ -1,0 +1,39 @@
+{{- /*
+model/entity.go renders one entity's model declarations: the struct a
+scanned row fills and a handler marshals, and one generated type plus one
+constant per member for each enum field (spec §5.6's model row).
+
+Nearly logic-free, per spec §5.1: every Go type, every identifier and every
+quoted literal comes from the IR or from a funcMap function in gen.go. The
+only control flow here is iteration over slices the IR already orders --
+never a map, whose iteration order Go randomises (spec §5.3).
+*/ -}}
+{{- define "model/entity.go" -}}
+{{template "header" .}}
+{{- with .Entity}}
+// {{.GoName}} is the generated model for entity "{{comment .Name}}" (table "{{comment .Table}}").
+//
+// It is output only: the store fills it from a scanned row and a handler
+// marshals it. Every field carries an explicit json tag naming its column, and
+// no field is omitempty -- a NULL column must serialise as null rather than
+// vanish from the object (spec §6.9.2).
+type {{.GoName}} struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} {{jsonTag .Column}}
+{{- end}}
+}
+{{range enumFields .}}
+// {{.EnumGoType}} is the generated type of the "{{comment .Name.Value}}" field.
+// Its members are exactly the values the schema declares; the CHECK constraint
+// in the migration is what enforces them in the database.
+type {{.EnumGoType}} string
+
+const (
+{{- $enum := .EnumGoType}}
+{{- range .EnumValues}}
+	{{$enum}}{{.GoName}} {{$enum}} = {{goString .Name.Value}}
+{{- end}}
+)
+{{end}}
+{{- end}}
+{{- end -}}

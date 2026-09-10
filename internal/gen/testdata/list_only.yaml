@@ -1,0 +1,11 @@
+# list_only is the matrix fixture in which `get`, `create`, `update` and
+# `delete` are ABSENT, and so are an enum field and a belongsTo. Without it
+# every conditional row of spec §5.6's table would be exercised only in its
+# present state, which is the drift direction the equality test exists to
+# catch.
+entities:
+  note:
+    fields:
+      id:   { type: uuid, pk: true }
+      body: { type: text }
+    endpoints: [list]
