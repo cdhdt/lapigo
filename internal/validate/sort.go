@@ -106,25 +106,30 @@ func validateSortKeyUniqueness(e *ir.Entity, k ir.SortKey, file string, diags *d
 // doc comment).
 //
 // A field is treated as non-mutable -- and so exempt from this warning --
-// when nothing the generated API can ever change about its value once the
-// row exists: its own primary key (never part of CreateInput or
+// only when nothing the generated API can ever change about its value once
+// the row exists: its own primary key (never part of CreateInput or
 // UpdateInput, and never reassigned by a client), a `readonly:` field (never
-// accepted from a request at all, spec §3.1), an `immutable:` field
-// (accepted on create, rejected on update, spec §3.1), or a field carrying
-// `default:` (excluded from CreateInput by spec §6.5, and therefore --
-// because UpdateInput is built by removing fields from CreateInput's own set,
-// never adding to it, per spec §6.5 -- also excluded from UpdateInput, so
-// nothing in the generated API can ever set it after the database or the
-// generator supplies it at insert).
+// accepted from a request at all, spec §3.1), or an `immutable:` field
+// (accepted on create, rejected on update, spec §3.1).
 //
-// The task brief names only `immutable: true` and `default:` as making a
-// field non-mutable; PK and ReadOnly are added here because both make a
-// field client-immutable through the exact same §6.5 input-projection
-// mechanism, and omitting them would warn on every plain `-id` tiebreaker --
-// the single most common last sort key in the whole format.
+// A field carrying only `default:` is deliberately NOT exempt. `default:`
+// means "supplied at insert when the request omits it" (spec §3.1/§6.5,
+// decided in #16) -- it says nothing about UpdateInput, so a defaulted field
+// such as `status: { default: draft }` is settable on every update like any
+// other field. Its value can therefore change after the row is created,
+// which is exactly what rule 5 exists to warn about: pair `default:` with
+// `immutable: true` (as `created_at` typically is) or `readonly: true` if
+// the field must never move once set, and the warning above disappears
+// through that exemption instead of this one.
+//
+// PK and ReadOnly are added here (the task brief names only `immutable:
+// true`) because both make a field client-immutable through the same §6.5
+// input-projection mechanism as `immutable:`, and omitting them would warn
+// on every plain `-id` tiebreaker -- the single most common last sort key
+// in the whole format.
 func validateSortKeyMutability(e *ir.Entity, k ir.SortKey, file string, diags *diag.Diagnostics) {
 	f := k.Field
-	if f.PK || f.ReadOnly || f.Immutable || f.Default != nil {
+	if f.PK || f.ReadOnly || f.Immutable {
 		return
 	}
 	pos, end := k.Span.Start, k.Span.End
