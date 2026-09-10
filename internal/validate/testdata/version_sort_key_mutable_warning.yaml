@@ -1,0 +1,6 @@
+entities:
+  article:
+    fields:
+      id:      { type: uuid, pk: true }
+      version: { type: int, required: true, version: true }
+    sort: [-version, -id]

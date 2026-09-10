@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/goccy/go-yaml/ast"
@@ -224,6 +225,15 @@ func (r *resolver) resolvePK(e *ir.Entity, nameAt source.At[string]) {
 // nothing but the "find every field with a bool flag set, and complain
 // about more than one" shape, and PK has a zero-case resolvePK also has to
 // handle that Version does not.
+//
+// When exactly one field carries `version: true`, resolveVersion hands it to
+// validateVersionField for the three constraints issue #46 settles: type,
+// nullability, and PK exclusivity. Those checks only make sense once there
+// is a single, unambiguous field to blame -- the duplicate case above is
+// already an error in its own right, and reporting "wrong type"/"nullable"
+// against two candidates a user must first disambiguate would pile a second
+// class of diagnostic onto a schema that has not yet said which field it
+// means.
 func (r *resolver) resolveVersion(e *ir.Entity) {
 	var versions []*ir.Field
 	for _, f := range e.Fields {
@@ -231,11 +241,66 @@ func (r *resolver) resolveVersion(e *ir.Entity) {
 			versions = append(versions, f)
 		}
 	}
-	if len(versions) <= 1 {
+	switch len(versions) {
+	case 0:
 		return
+	case 1:
+		r.validateVersionField(e, versions[0])
+	default:
+		for _, f := range versions {
+			r.addAt(f.Name, "at most one field may be marked `version: true` (spec §3.1)",
+				"entity %q has %d fields marked `version: true`, want at most 1", e.Name, len(versions))
+		}
 	}
-	for _, f := range versions {
-		r.addAt(f.Name, "at most one field may be marked `version: true` (spec §3.1)",
-			"entity %q has %d fields marked `version: true`, want at most 1", e.Name, len(versions))
+}
+
+// validateVersionField reports a diagnostic -- with a position, before
+// ir.Schema.Freeze ever runs -- for each of the three constraints issue #46
+// settles on e's single `version: true` field, f:
+//
+//  1. its type must be `int` or `bigint`: step 7's optimistic-concurrency
+//     update emits `SET version = version + 1`, which only an integer column
+//     can execute;
+//  2. it must be `required: true`: a NULL version makes every
+//     `version = $n` comparison yield unknown, so an `If-Match` update
+//     matches zero rows and returns 409 forever -- spec §3.3 rule 3's
+//     reasoning ("SQL comparison against NULL yields unknown") applied to
+//     this column instead of a sort key;
+//  3. it may not also carry `pk: true` -- a row's identity and its
+//     optimistic-concurrency counter are different columns by construction
+//     (spec §3.1's own worked example never combines them).
+//
+// The three are independent, checked in this order, and none returns early
+// on another firing: the issue's own trap example, `id: { type: uuid, pk:
+// true, version: true }`, fails both the type check (uuid) and the PK check
+// at once, and a user fixing only one should still see the other. This
+// mirrors every other check in this package (spec §4.4: never stop at the
+// first diagnostic).
+//
+// Deliberately NOT done here, and not anywhere else in this package: marking
+// the field ReadOnly, or otherwise excluding it from input projection. Doing
+// so would make internal/validate's validateSortKeyMutability treat it as
+// immutable and silently drop the mutable-sort-key warning for a column the
+// server bumps on every write -- the single worst possible sort key. The
+// input-projection exclusion is a spec concern (issue #18), not something
+// this change implements.
+func (r *resolver) validateVersionField(e *ir.Entity, f *ir.Field) {
+	if f.Type != ir.FieldTypeInt && f.Type != ir.FieldTypeBigint {
+		r.addAt(f.Name,
+			fmt.Sprintf("mark `%s` `type: int` or `type: bigint`; an optimistic-concurrency counter must be "+
+				"an integer the store can increment", f.Name.Value),
+			"entity %q's version field %q has type %q, want `int` or `bigint`", e.Name, f.Name.Value, f.Type.String())
+	}
+	if f.Nullable {
+		r.addAt(f.Name,
+			fmt.Sprintf("mark `%s` `required: true`; a NULL version makes every `version = $n` comparison "+
+				"yield unknown, so an `If-Match` update matches zero rows and returns 409 forever "+
+				"(spec §3.3 rule 3's reasoning, applied to this column)", f.Name.Value),
+			"entity %q's version field %q is nullable", e.Name, f.Name.Value)
+	}
+	if f.PK {
+		r.addAt(f.Name,
+			fmt.Sprintf("mark `pk: true` on a different field, or remove `version: true` from `%s`", f.Name.Value),
+			"entity %q's version field %q may not also be the primary key", e.Name, f.Name.Value)
 	}
 }

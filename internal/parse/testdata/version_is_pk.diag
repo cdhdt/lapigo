@@ -1,0 +1,9 @@
+lapigo.yaml:4:7: entity "article"'s version field "id" has type "uuid", want `int` or `bigint`
+   4 |       id: { type: uuid, pk: true, version: true }
+     |       ^^
+   mark `id` `type: int` or `type: bigint`; an optimistic-concurrency counter must be an integer the store can increment
+
+lapigo.yaml:4:7: entity "article"'s version field "id" may not also be the primary key
+   4 |       id: { type: uuid, pk: true, version: true }
+     |       ^^
+   mark `pk: true` on a different field, or remove `version: true` from `id`

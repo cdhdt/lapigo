@@ -49,6 +49,17 @@ var goldenCases = []string{
 	"belongs_to_target_not_found",
 	"no_pk",
 	"two_pk",
+
+	// version_wrong_type, version_not_required and version_is_pk are issue
+	// #46's three rules for a `version: true` field, each in isolation:
+	// wrong type (text, not int/bigint), nullable (no `required: true`),
+	// and the field also being the entity's `pk: true`. version_is_pk is
+	// the issue's own trap example, `id: { type: uuid, pk: true, version:
+	// true }`, which fails two of the three rules at once (wrong type and
+	// PK) -- its .diag pins both diagnostics, in the order the checks run.
+	"version_wrong_type",
+	"version_not_required",
+	"version_is_pk",
 	"duplicate_entity_name",
 	"duplicate_field_name",
 	"non_ascii_and_quoted_keys",

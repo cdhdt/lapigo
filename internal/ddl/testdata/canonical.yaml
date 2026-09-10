@@ -9,7 +9,7 @@ entities:
       slug:       { type: string, unique: true, readonly: true }
       author:     { type: belongsTo, target: user, on_delete: restrict }
       created_at: { type: timestamp, required: true, default: now, immutable: true }
-      version:    { type: int, version: true }
+      version:    { type: int, required: true, version: true }
     sort: [-created_at, -id]
     filters: [status, author]
     endpoints: [list, get, create, update, delete]

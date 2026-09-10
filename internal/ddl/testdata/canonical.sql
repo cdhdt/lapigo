@@ -8,7 +8,7 @@ CREATE TABLE "articles" (
     "slug" text,
     "author_id" uuid,
     "created_at" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "version" integer,
+    "version" integer NOT NULL,
     CONSTRAINT articles_pkey PRIMARY KEY ("id"),
     CONSTRAINT articles_slug_key UNIQUE ("slug"),
     CONSTRAINT articles_status_check CHECK ("status" IN ('draft', 'published'))
