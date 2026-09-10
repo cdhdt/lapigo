@@ -59,6 +59,15 @@ type Entity struct {
 	TableSpan source.Span // the `table:` value; zero when Table was defaulted, not written
 	Fields    []*Field    // declaration order, not sorted — see Lookup. Pointer slice for the same reason as Schema.Entities.
 	PK        *Field
+	// Version is the promoted pointer to the field marked `version: true`
+	// (spec §3.1, §3.6), mirroring PK so that spec §6.6's ETag and If-Match
+	// machinery never has to rescan Fields to find the optimistic-
+	// concurrency column. Unlike PK, nil is a legitimate value here: a
+	// version column is optional (spec §3.1's "at most one"), not
+	// required, so an entity declaring none simply has Version == nil.
+	// Schema.Freeze checks that Version agrees with Fields, exactly as it
+	// does for PK.
+	Version   *Field
 	Sort      SortSpec
 	Filters   []Filter
 	Indexes   []Index // declared composite indexes, declaration order (spec §3.5); the derived set of spec §7.2 is NOT stored — the DDL emitter computes it
