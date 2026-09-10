@@ -1,0 +1,4 @@
+lapigo.yaml:6:15: filter "after" has wire name "after", which is reserved for pagination
+   6 |     filters: [after]
+     |               ^^^^^
+   `limit` and `after` are reserved query-parameter names for pagination (spec §6.9.4); remove `after` from `filters`
