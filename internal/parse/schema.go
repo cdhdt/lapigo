@@ -32,11 +32,12 @@ type entityBuild struct {
 // every entity first (buildEntity, via buildFieldsAndRelations), then every
 // pointer that must reference one of them.
 //
-// Entity.PK (resolvePK) and version-field validation (resolveVersion) are
-// resolved in the first pass, immediately after each entity's own Fields
-// are built -- they only ever look within that same entity's Fields, so
-// they need nothing from any other entity and do not have to wait for
-// Schema.Entities to exist at all, let alone be sorted. SortKey.Field,
+// Entity.PK (resolvePK), version-field validation (resolveVersion) and the
+// unfillable-column check (checkUnfillableFields) are resolved in the first
+// pass, immediately after each entity's own Fields are built -- they only
+// ever look within that same entity's Fields, so they need nothing from any
+// other entity and do not have to wait for Schema.Entities to exist at all,
+// let alone be sorted. SortKey.Field,
 // Filter.Field and Relation.Target are the ones that genuinely wait for the
 // second pass: Relation.Target because it looks up a *different* entity by
 // name, which is only safe once Schema.Entities has been sorted (see the
@@ -84,6 +85,7 @@ func (r *resolver) resolveSchema(body ast.Node) *ir.Schema {
 		}
 		r.resolvePK(entity, e.Key)
 		r.resolveVersion(entity)
+		r.checkUnfillableFields(entity)
 		if !sortWritten && entity.PK != nil {
 			// CLAUDE.md decision 4: "the validator rejects sorts that lack
 			// [a unique tiebreaker] -- this must not be possible to
@@ -302,5 +304,46 @@ func (r *resolver) validateVersionField(e *ir.Entity, f *ir.Field) {
 		r.addAt(f.Name,
 			fmt.Sprintf("mark `pk: true` on a different field, or remove `version: true` from `%s`", f.Name.Value),
 			"entity %q's version field %q may not also be the primary key", e.Name, f.Name.Value)
+	}
+}
+
+// checkUnfillableFields reports a diagnostic -- with a position, before
+// ir.Schema.Freeze ever runs -- for spec §6.5's "combination the validator
+// rejects": a field that is `required: true`, carries no `default:`, and is
+// absent from `CreateInput` because it is `readonly: true`. Nothing on the
+// write path can ever put a value in such a column: the client cannot,
+// because `readonly:` takes it off the wire (spec §6.5 question 1); nothing
+// else can either, because a `readonly:` field has only a `BeforeCreate`
+// hook to fall back on and the generator cannot know at generation time
+// whether the user wrote one -- the honest reading is that nothing supplies
+// it. Every insert therefore leaves the column NULL, Postgres answers
+// `23502`, and spec §6.7's error-mapping table does not translate that code,
+// so a schema that validates clean produces a 500 on its very first create.
+//
+// `pk: true` and `version: true` fields are exempt even though both are
+// `required: true` in effect (Field.Nullable is false for either, per
+// buildField's `f.Nullable = !required && !pk`) and both are absent from
+// `CreateInput` too (spec §6.5's own question-1 table, rows one and two):
+// lapigo supplies their value on every insert itself, unlike a `readonly:`
+// field -- the generator mints the key client-side for `pk` (spec §3.2), and
+// the store inserts version 1 for `version: true` (spec §6.6). Checked with
+// f.PK and f.Version explicitly, not by skipping every field that merely
+// looks non-nullable, so the exemption tracks exactly the two rows spec
+// §6.5 grants it to and no more.
+//
+// Runs over e.Fields once buildEntity has finished buildFieldsAndRelations,
+// so both plain fields and belongsTo FK columns are present in the slice
+// (see buildEntity's own call site in resolveSchema) -- a belongsTo field
+// marked `required: true, readonly: true` is caught the same way a plain
+// scalar field is; *ir.Field carries nothing that distinguishes the two
+// once built, and this check needs nothing that would.
+func (r *resolver) checkUnfillableFields(e *ir.Entity) {
+	for _, f := range e.Fields {
+		if f.PK || f.Version || !f.ReadOnly || f.Nullable || f.Default != nil {
+			continue
+		}
+		r.addAt(f.Name,
+			"add a `default:`, or drop `required:` (spec §6.5)",
+			"field %q is required and read-only with no default: the column can never be filled", f.Name.Value)
 	}
 }

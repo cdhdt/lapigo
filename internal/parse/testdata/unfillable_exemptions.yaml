@@ -1,0 +1,5 @@
+entities:
+  widget:
+    fields:
+      id:      { type: uuid, pk: true, required: true, readonly: true }
+      version: { type: int, required: true, version: true, readonly: true }

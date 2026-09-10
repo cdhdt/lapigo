@@ -3,5 +3,5 @@ entities:
     fields:
       id:         { type: uuid, pk: true }
       created_at: { type: timestamp, required: true, default: now }
-      slug:       { type: string, required: true, unique: true, readonly: true }
+      slug:       { type: string, required: true, unique: true, readonly: true, default: pending }
     sort: [created_at, slug, id]

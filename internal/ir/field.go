@@ -74,6 +74,31 @@ func (f *Field) GoType() string {
 	return f.Type.GoType(f.Nullable)
 }
 
+// ValueGoType returns f's Go type with nullability stripped: the T of
+// Optional[T] (spec §6.5, §2.2). It exists apart from GoType because the two
+// answer for different structs. GoType answers for the model, where a nil
+// pointer is how encoding/json marshals a nullable field's absence to JSON
+// null — a marshalling concern. ValueGoType answers for CreateInput and
+// UpdateInput, where every member is Optional[T] regardless of nullability,
+// and the field's own null state is carried by Optional[T]'s null flag
+// instead (see the Optional[T] definition in spec §6.5). Optional[*string]
+// would layer that pointer's nil-as-null state on top of Optional's own,
+// giving "null" two independent representations; ValueGoType exists so a
+// template never has to reconcile them, because it never sees the pointer.
+//
+// Like GoType, it defers to FieldType.goTypeBase for every scalar except
+// enum: FieldTypeEnum has no entity or field context of its own to derive
+// EnumGoType from, which is exactly why GoType special-cases it too — see
+// that method's doc comment. ValueGoType does not call FieldType.GoType,
+// because GoType's nullable branch is precisely the transform ValueGoType
+// exists to skip.
+func (f *Field) ValueGoType() string {
+	if f.Type == FieldTypeEnum {
+		return f.EnumGoType
+	}
+	return f.Type.goTypeBase()
+}
+
 // PgType returns f's Postgres column type, per spec §3.2. The one modifier
 // FieldType cannot express by itself is a string field's Max, which upgrades
 // the base "text" to "varchar(n)" (spec §3.1); every other type is exactly
