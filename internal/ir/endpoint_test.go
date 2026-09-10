@@ -74,9 +74,9 @@ func TestEntity_HasEndpointPredicates(t *testing.T) {
 	e := &Entity{
 		Name: "article",
 		Endpoints: []Endpoint{
-			{Kind: EndpointList, Path: "/articles"},
-			{Kind: EndpointGet, Path: "/articles/{id}"},
-			{Kind: EndpointUpdate, Path: "/articles/{id}"},
+			{Kind: EndpointList},
+			{Kind: EndpointGet},
+			{Kind: EndpointUpdate},
 		},
 	}
 

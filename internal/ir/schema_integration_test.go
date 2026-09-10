@@ -54,8 +54,8 @@ func TestSchema_Compose(t *testing.T) {
 			},
 		},
 		Endpoints: []Endpoint{
-			{Kind: EndpointList, Path: "/articles"},
-			{Kind: EndpointGet, Path: "/articles/{id}"},
+			{Kind: EndpointList},
+			{Kind: EndpointGet},
 		},
 	}
 
