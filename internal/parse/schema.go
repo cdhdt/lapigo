@@ -216,12 +216,15 @@ func (r *resolver) resolvePK(e *ir.Entity, nameAt source.At[string]) {
 	}
 }
 
-// resolveVersion reports a diagnostic -- with a position, before
-// ir.Schema.Freeze ever runs -- for the one condition spec §3.1 states and
-// Freeze would otherwise catch as a bare, positionless "this is a bug in
-// lapigo" error: more than one field marked `version: true` in the same
-// entity. Unlike resolvePK, there is no "zero" case to reject: a version
-// column is optional (spec §3.1's "at most one"), not required.
+// resolveVersion promotes e.Version to the field marked `version: true`
+// (mirroring resolvePK's e.PK, spec §3.1, §3.6, issue #25) and reports a
+// diagnostic -- with a position, before ir.Schema.Freeze ever runs -- for
+// the one condition spec §3.1 states and Freeze would otherwise catch as a
+// bare, positionless "this is a bug in lapigo" error: more than one field
+// marked `version: true` in the same entity. Unlike resolvePK, there is no
+// "zero" case to reject, and nothing to promote: a version column is
+// optional (spec §3.1's "at most one"), not required, so e.Version is
+// simply left at its zero value, nil.
 //
 // Beside resolvePK deliberately, not folded into it: the two checks share
 // nothing but the "find every field with a bool flag set, and complain
@@ -247,6 +250,15 @@ func (r *resolver) resolveVersion(e *ir.Entity) {
 	case 0:
 		return
 	case 1:
+		// Promoted regardless of what validateVersionField finds below,
+		// exactly like resolvePK's e.PK = pks[0]: a schema carrying
+		// diagnostics is never handed to a caller (Parse's own contract),
+		// so there is no risk of a half-validated Version pointer escaping
+		// this package, and ir.Schema.Freeze's own e.Version != version
+		// check needs this set even on the failure path to avoid tripping
+		// its own "not promoted" error on top of whichever diagnostic
+		// validateVersionField reports.
+		e.Version = versions[0]
 		r.validateVersionField(e, versions[0])
 	default:
 		for _, f := range versions {

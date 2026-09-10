@@ -156,6 +156,81 @@ func TestSchema_Freeze_TooManyVersionFields(t *testing.T) {
 	}
 }
 
+// TestSchema_Freeze_VersionPromoted_Success proves Freeze accepts an entity
+// whose Version pointer correctly names the one field marked
+// `version: true`, mirroring how PK is proven in
+// TestSchema_Freeze_Success.
+func TestSchema_Freeze_VersionPromoted_Success(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	v := &Field{Name: source.Bare("version"), Type: FieldTypeInt, Version: true}
+	e := &Entity{Name: "widget", Fields: []*Field{id, v}, PK: id, Version: v}
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err != nil {
+		t.Fatalf("Freeze() = %v, want nil: Version correctly promoted", err)
+	}
+}
+
+// TestSchema_Freeze_NoVersionField_NilPromotion proves Freeze accepts an
+// entity with no `version: true` field at all only when Version is left
+// nil -- the "at most one" half of spec §3.1 means Version legitimately has
+// no promoted field to point at, unlike PK.
+func TestSchema_Freeze_NoVersionField_NilPromotion(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	e := &Entity{Name: "widget", Fields: []*Field{id}, PK: id}
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err != nil {
+		t.Fatalf("Freeze() = %v, want nil: no version field, Version correctly left nil", err)
+	}
+}
+
+// TestSchema_Freeze_VersionIdentityNotName proves the Version check is by
+// pointer identity, not by name, the same defect class
+// TestSchema_Freeze_PKIdentityNotName exists for: decoy has the same Name
+// and Version: true as the real field but is not an element of e.Fields.
+func TestSchema_Freeze_VersionIdentityNotName(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	real := &Field{Name: source.Bare("version"), Version: true}
+	decoy := &Field{Name: source.Bare("version"), Version: true}
+	e := &Entity{Name: "widget", Fields: []*Field{id, real}, PK: id, Version: decoy}
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err == nil {
+		t.Fatal("Freeze() = nil, want an error: Version points at a field with the same name but different identity")
+	}
+}
+
+// TestSchema_Freeze_VersionPromotedWithNoFieldMarked catches a stale
+// promotion: e.Version names a real field, but that field does not carry
+// Version: true, so nothing in e.Fields agrees the entity has a version
+// column at all.
+func TestSchema_Freeze_VersionPromotedWithNoFieldMarked(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	notVersion := &Field{Name: source.Bare("count")}
+	e := &Entity{Name: "widget", Fields: []*Field{id, notVersion}, PK: id, Version: notVersion}
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err == nil {
+		t.Fatal("Freeze() = nil, want an error: Version points at a field not marked version: true")
+	}
+}
+
+// TestSchema_Freeze_VersionFieldNotPromoted catches the opposite gap: a
+// field in e.Fields carries Version: true, but e.Version was never set to
+// point at it, so a §6.6 consumer reading e.Version directly would see no
+// version column on an entity that has one.
+func TestSchema_Freeze_VersionFieldNotPromoted(t *testing.T) {
+	id := &Field{Name: source.Bare("id"), PK: true}
+	v := &Field{Name: source.Bare("version"), Type: FieldTypeInt, Version: true}
+	e := &Entity{Name: "widget", Fields: []*Field{id, v}, PK: id} // Version left nil
+	schema := &Schema{Entities: []*Entity{e}}
+
+	if err := schema.Freeze(); err == nil {
+		t.Fatal("Freeze() = nil, want an error: a field is marked version: true but Entity.Version is nil")
+	}
+}
+
 func TestSchema_Freeze_DuplicateFieldName(t *testing.T) {
 	id := &Field{Name: source.Bare("id"), PK: true}
 	dup1 := &Field{Name: source.Bare("name")}
