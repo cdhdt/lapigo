@@ -1,8 +1,8 @@
 # Blank issues are disabled deliberately: the project's process requires
 # every task issue to carry a Journal section (context, done, remaining,
-# decided), and a blank issue has nowhere for that to live. Use the Task or
-# Bug report form; if truly neither fits, adapt the Task form rather than
-# dropping to a blank issue.
+# decided), and a blank issue has nowhere for that to live. Use the Task, Bug
+# report, or Challenge a decision form; if truly none fits, adapt the Task
+# form rather than dropping to a blank issue.
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
