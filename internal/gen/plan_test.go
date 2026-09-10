@@ -17,11 +17,17 @@ import (
 // thing standing between the two is this assertion and spec §8's compile
 // tier.
 func TestPlan_Full(t *testing.T) {
-	files, err := plan(loadFixture(t, "full"))
+	files, err := plan(loadFixture(t, "full"), testModulePath)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
 
+	hooksImports := []string{
+		"context",
+		modelImportPath(testModulePath),
+		pgxImport,
+		pgtypeImport,
+	}
 	want := []OutputFile{
 		{
 			Path:     "internal/gen/model/article.go",
@@ -34,6 +40,24 @@ func TestPlan_Full(t *testing.T) {
 			Package:  "model",
 			Imports:  []string{"github.com/jackc/pgx/v5/pgtype"},
 			Template: "model/entity.go",
+		},
+		{
+			Path:     "internal/gen/hooks/error.go",
+			Package:  "hooks",
+			Imports:  []string{"fmt", "net/http"},
+			Template: "hooks/error.go",
+		},
+		{
+			Path:     "internal/gen/hooks/article.go",
+			Package:  "hooks",
+			Imports:  hooksImports,
+			Template: "hooks/entity.go",
+		},
+		{
+			Path:     "internal/gen/hooks/user.go",
+			Package:  "hooks",
+			Imports:  hooksImports,
+			Template: "hooks/entity.go",
 		},
 	}
 
@@ -63,7 +87,7 @@ func TestPlan_Full(t *testing.T) {
 // its own -- but the plan is what a later step iterates to write files, and
 // an unstable plan makes unstable diagnostics (spec §5.3).
 func TestPlan_OrderFollowsTheSortedEntities(t *testing.T) {
-	files, err := plan(loadFixture(t, "full"))
+	files, err := plan(loadFixture(t, "full"), testModulePath)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -72,7 +96,13 @@ func TestPlan_OrderFollowsTheSortedEntities(t *testing.T) {
 	for i, f := range files {
 		got[i] = f.Path
 	}
-	want := []string{"internal/gen/model/article.go", "internal/gen/model/user.go"}
+	want := []string{
+		"internal/gen/model/article.go",
+		"internal/gen/model/user.go",
+		"internal/gen/hooks/error.go",
+		"internal/gen/hooks/article.go",
+		"internal/gen/hooks/user.go",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("plan order = %v, want %v", got, want)
 	}
@@ -82,16 +112,16 @@ func TestPlan_OrderFollowsTheSortedEntities(t *testing.T) {
 // directly. Generate rejects nil before it gets here, so this is the
 // belt-and-braces half: an error string is part of the contract (CLAUDE.md).
 func TestPlan_NilSchema(t *testing.T) {
-	files, err := plan(nil)
+	files, err := plan(nil, testModulePath)
 	if files != nil {
-		t.Errorf("plan(nil) returned %d files, want none", len(files))
+		t.Errorf("plan(nil, testModulePath) returned %d files, want none", len(files))
 	}
 	if err == nil {
-		t.Fatal("plan(nil) returned a nil error, want one")
+		t.Fatal("plan(nil, testModulePath) returned a nil error, want one")
 	}
 	const want = "gen: plan called on a nil schema"
 	if err.Error() != want {
-		t.Errorf("plan(nil) error = %q, want %q", err.Error(), want)
+		t.Errorf("plan(nil, testModulePath) error = %q, want %q", err.Error(), want)
 	}
 }
 

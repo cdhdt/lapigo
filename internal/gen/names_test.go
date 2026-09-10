@@ -131,7 +131,7 @@ func TestDeclarationSet_MatchesRenderedOutput(t *testing.T) {
 	for _, name := range goldenCases {
 		t.Run(name, func(t *testing.T) {
 			schema := loadFixture(t, name)
-			files, err := Generate(schema)
+			files, err := Generate(schema, testModulePath)
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
@@ -159,7 +159,7 @@ func TestPendingDeclarations_AreAbsentFromTheOutput(t *testing.T) {
 	for _, name := range goldenCases {
 		t.Run(name, func(t *testing.T) {
 			schema := loadFixture(t, name)
-			files, err := Generate(schema)
+			files, err := Generate(schema, testModulePath)
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}

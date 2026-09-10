@@ -17,6 +17,16 @@ import (
 	"github.com/cdhdt/lapigo/internal/validate"
 )
 
+// testModulePath is the modulePath every test in this package that calls
+// Generate or plan supplies, standing in for a real project's go.mod module
+// line. It carries a dot in its first segment for realism -- most real
+// module paths do (the "github.com/..." convention) -- even though
+// isStdlibImport no longer needs one: a bare name such as spec §6.1's own
+// `lapigo new myapp` example is covered by its genRoot special case (see
+// isStdlibImport's own doc comment), and TestIsStdlibImport pins that case
+// directly.
+const testModulePath = "example.com/lapigotest"
+
 // loadFixture parses, validates and freezes testdata/<name>.yaml, failing the
 // test if any stage reports anything. Generate's contract is a frozen,
 // validated *ir.Schema (spec §2.1: load, parse, resolve and validate all sit
@@ -52,7 +62,7 @@ func loadFixture(t *testing.T, name string) *ir.Schema {
 // without a matching path -- or a path that moves -- has to show up as a
 // failure here, not as a surprise in someone's working tree.
 func TestGenerate_FileSet(t *testing.T) {
-	files, err := Generate(loadFixture(t, "full"))
+	files, err := Generate(loadFixture(t, "full"), testModulePath)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -60,6 +70,9 @@ func TestGenerate_FileSet(t *testing.T) {
 	want := []string{
 		"internal/gen/model/article.go",
 		"internal/gen/model/user.go",
+		"internal/gen/hooks/error.go",
+		"internal/gen/hooks/article.go",
+		"internal/gen/hooks/user.go",
 	}
 	got := make([]string, 0, len(files))
 	for path := range files {
@@ -72,16 +85,16 @@ func TestGenerate_FileSet(t *testing.T) {
 // be handed that is not a schema at all. The message is asserted whole: an
 // error string is part of the contract (CLAUDE.md).
 func TestGenerate_NilSchema(t *testing.T) {
-	files, err := Generate(nil)
+	files, err := Generate(nil, testModulePath)
 	if files != nil {
-		t.Errorf("Generate(nil) returned %d files, want none", len(files))
+		t.Errorf("Generate(nil, testModulePath) returned %d files, want none", len(files))
 	}
 	if err == nil {
-		t.Fatal("Generate(nil) returned a nil error, want one")
+		t.Fatal("Generate(nil, testModulePath) returned a nil error, want one")
 	}
 	const want = "gen: Generate called on a nil schema"
 	if err.Error() != want {
-		t.Errorf("Generate(nil) error = %q, want %q", err.Error(), want)
+		t.Errorf("Generate(nil, testModulePath) error = %q, want %q", err.Error(), want)
 	}
 }
 
@@ -213,7 +226,7 @@ func TestRender_TypoInARealTemplateFails(t *testing.T) {
 		t.Fatalf("newTemplate: %v", err)
 	}
 
-	files, err := plan(loadFixture(t, "full"))
+	files, err := plan(loadFixture(t, "full"), testModulePath)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -240,13 +253,13 @@ func TestGenerate_IsDeterministic(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			schema := loadFixture(t, name)
 
-			first, err := Generate(schema)
+			first, err := Generate(schema, testModulePath)
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
 
 			for i := 2; i <= 20; i++ {
-				again, err := Generate(schema)
+				again, err := Generate(schema, testModulePath)
 				if err != nil {
 					t.Fatalf("Generate, run %d: %v", i, err)
 				}
@@ -456,7 +469,8 @@ func TestImportBlock_RejectsMalformedSets(t *testing.T) {
 // TestIsStdlibImport pins the standard library test: a module path's first
 // element contains a dot and a standard library path's does not. Both sides
 // are covered, including the single-element forms where the rule is easiest
-// to get backwards.
+// to get backwards, and the genRoot special case a bare, dotless module name
+// (spec §6.1's own `lapigo new myapp` example) needs -- see the doc comment.
 func TestIsStdlibImport(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -468,6 +482,8 @@ func TestIsStdlibImport(t *testing.T) {
 		{"github.com/jackc/pgx/v5/pgtype", false},
 		{"gopkg.in/yaml.v3", false},
 		{"example.com", false},
+		{"myapp/internal/gen/model", false},
+		{"myapp/internal/gen/hooks", false},
 	}
 
 	for _, c := range cases {
@@ -530,7 +546,7 @@ func TestGenerate_SanitisesUserStringsInComments(t *testing.T) {
 		},
 	}}}
 
-	files, err := Generate(schema)
+	files, err := Generate(schema, testModulePath)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}

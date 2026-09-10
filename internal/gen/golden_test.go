@@ -83,7 +83,7 @@ func TestGolden_NoOrphanFixtures(t *testing.T) {
 func TestGenerate_Golden(t *testing.T) {
 	for _, name := range goldenCases {
 		t.Run(name, func(t *testing.T) {
-			got, err := Generate(loadFixture(t, name))
+			got, err := Generate(loadFixture(t, name), testModulePath)
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
