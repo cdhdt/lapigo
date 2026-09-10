@@ -58,11 +58,11 @@ func TestParse_CanonicalSchema(t *testing.T) {
 		},
 		Sort: ir.SortSpec{Desc: true},
 		Endpoints: []ir.Endpoint{
-			{Kind: ir.EndpointList, Path: "/articles"},
-			{Kind: ir.EndpointGet, Path: "/articles/{id}"},
-			{Kind: ir.EndpointCreate, Path: "/articles"},
-			{Kind: ir.EndpointUpdate, Path: "/articles/{id}"},
-			{Kind: ir.EndpointDelete, Path: "/articles/{id}"},
+			{Kind: ir.EndpointList},
+			{Kind: ir.EndpointGet},
+			{Kind: ir.EndpointCreate},
+			{Kind: ir.EndpointUpdate},
+			{Kind: ir.EndpointDelete},
 		},
 	}
 	article.PK = article.Fields[0]
@@ -78,11 +78,11 @@ func TestParse_CanonicalSchema(t *testing.T) {
 			{Name: source.Bare("email"), GoName: "Email", Column: "email", Type: ir.FieldTypeString, Unique: true},
 		},
 		Endpoints: []ir.Endpoint{
-			{Kind: ir.EndpointList, Path: "/users"},
-			{Kind: ir.EndpointGet, Path: "/users/{id}"},
-			{Kind: ir.EndpointCreate, Path: "/users"},
-			{Kind: ir.EndpointUpdate, Path: "/users/{id}"},
-			{Kind: ir.EndpointDelete, Path: "/users/{id}"},
+			{Kind: ir.EndpointList},
+			{Kind: ir.EndpointGet},
+			{Kind: ir.EndpointCreate},
+			{Kind: ir.EndpointUpdate},
+			{Kind: ir.EndpointDelete},
 		},
 	}
 	user.PK = user.Fields[0]
@@ -112,6 +112,35 @@ func TestParse_CanonicalSchema(t *testing.T) {
 		}
 		t.Fatalf("schema mismatch.\n got: %s\nwant: %s", dumpSchema(schema), dumpSchema(want))
 	}
+
+	// Entity.Path derives the route path from Kind, Table and PK.Column
+	// (issue #47) rather than storing it on Endpoint -- assert it directly
+	// against the resolved schema's own entities, not the hand-built want,
+	// since Path is no longer a field reflect.DeepEqual above could compare.
+	wantPaths := map[string]map[ir.EndpointKind]string{
+		"article": {
+			ir.EndpointList:   "/articles",
+			ir.EndpointGet:    "/articles/{id}",
+			ir.EndpointCreate: "/articles",
+			ir.EndpointUpdate: "/articles/{id}",
+			ir.EndpointDelete: "/articles/{id}",
+		},
+		"user": {
+			ir.EndpointList:   "/users",
+			ir.EndpointGet:    "/users/{id}",
+			ir.EndpointCreate: "/users",
+			ir.EndpointUpdate: "/users/{id}",
+			ir.EndpointDelete: "/users/{id}",
+		},
+	}
+	for _, e := range schema.Entities {
+		for _, ep := range e.Endpoints {
+			want := wantPaths[e.Name][ep.Kind]
+			if got := e.Path(ep.Kind); got != want {
+				t.Errorf("entity %s Path(%s) = %q, want %q", e.Name, ep.Kind, got, want)
+			}
+		}
+	}
 }
 
 func intPtr(v int) *int { return &v }
@@ -135,7 +164,7 @@ func dumpSchema(s *ir.Schema) string {
 			out += "  Relation " + rel.Name + " -> " + rel.Target.Name + "\n"
 		}
 		for _, ep := range e.Endpoints {
-			out += "  Endpoint " + ep.Kind.String() + " " + ep.Path + "\n"
+			out += "  Endpoint " + ep.Kind.String() + " " + e.Path(ep.Kind) + "\n"
 		}
 	}
 	return out

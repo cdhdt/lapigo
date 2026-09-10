@@ -1,0 +1,4 @@
+lapigo.yaml:7:12: warning: sort key "created_at" may change after the row is created
+   7 |     sort: [created_at, slug, id]
+     |            ^^^^^^^^^^
+   a row whose sort value changes can move relative to a live cursor; this is inherent to keyset pagination and does not block generation. Mark `created_at` `immutable: true` if its value must never change once set (spec §3.3 rule 5)
