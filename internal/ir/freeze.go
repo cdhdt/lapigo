@@ -39,7 +39,7 @@ func (s *Schema) Freeze() error {
 // freeze checks the invariants scoped to a single entity.
 func (e *Entity) freeze(s *Schema) error {
 	seen := make(map[string]bool, len(e.Fields))
-	var pk *Field
+	var pk, version *Field
 	pkCount, versionCount := 0, 0
 	for _, f := range e.Fields {
 		if seen[f.Name.Value] {
@@ -52,6 +52,7 @@ func (e *Entity) freeze(s *Schema) error {
 		}
 		if f.Version {
 			versionCount++
+			version = f
 		}
 		// Every element of Field.EnumValues is meant to carry a non-empty
 		// GoName by construction (internal/parse/field.go's buildEnumValues
@@ -83,6 +84,18 @@ func (e *Entity) freeze(s *Schema) error {
 	// that e.PK is an element of e.Fields.
 	if e.PK != pk {
 		return fmt.Errorf("ir: entity %q PK does not point at the field marked PK", e.Name)
+	}
+	// e.Version must agree with the loop above by the same identity check,
+	// in both directions: versionCount is already known to be 0 or 1 here
+	// (the >1 case returned above), so version is either the one field that
+	// claims Version: true or nil, and e.Version must equal it exactly --
+	// nil when no field is marked, that field's own pointer when one is.
+	// Unlike PK there is no separate "count != 1" guard to lean on for the
+	// zero case, so this single comparison is what catches both a stale
+	// promotion (e.Version set when no field claims Version: true) and a
+	// missing one (a field claims it but e.Version was never set).
+	if e.Version != version {
+		return fmt.Errorf("ir: entity %q Version does not point at the field marked version: true (or is not nil when none is)", e.Name)
 	}
 
 	for _, k := range e.Sort.Keys {
