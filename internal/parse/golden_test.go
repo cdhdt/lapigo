@@ -85,6 +85,24 @@ var goldenCases = []string{
 	// "BOGUS") survives the message-only unit test but fails this one.
 	"enum_unexportable_value",
 	"identifier_too_long",
+
+	// readonly_required_no_default is issue #52 / spec §6.5's "combination
+	// the validator rejects": a field that is `required: true`, `readonly:
+	// true`, and carries no `default:` can never be filled by any insert --
+	// every request omits the field (readonly: takes it off the wire), so
+	// Postgres sees NULL against a NOT NULL column on every create.
+	// Reproduced verbatim from the issue's own trap example
+	// (`tag: { type: string, required: true, readonly: true }`), which a
+	// throwaway pre-implementation test proved merged code accepted with
+	// zero diagnostics before checkUnfillableFields existed.
+	"readonly_required_no_default",
+	// readonly_required_no_default_belongs_to is the same rule on a
+	// belongsTo FK column instead of a plain scalar field: buildRelationField
+	// builds a *ir.Field indistinguishable, as far as checkUnfillableFields
+	// can tell, from one buildField builds, and both land in e.Fields before
+	// checkUnfillableFields runs (see its own doc comment). Without this
+	// fixture that claim is only a comment, not a checked fact.
+	"readonly_required_no_default_belongs_to",
 }
 
 // successFixtures are the .yaml files under testdata/ that parse cleanly and
@@ -100,6 +118,15 @@ var successFixtures = map[string]bool{
 	// IR is asserted in index_test.go, including column pointer identity and
 	// the exact spans of both declared columns.
 	"declared_indexes": true,
+	// unfillable_exemptions proves the two exemptions spec §6.5 names for
+	// checkUnfillableFields hold: a `pk: true` field and a `version: true`
+	// field are both `required: true` in effect (Field.Nullable is false for
+	// either) and both absent from CreateInput, yet neither may be rejected
+	// -- lapigo supplies both values on every insert itself (spec §3.2,
+	// §6.6). Both fields here also carry `readonly: true` and no `default:`,
+	// the exact shape that trips the rule on any other field, so this
+	// fixture is a false-positive trap for the rule, not just a happy path.
+	"unfillable_exemptions": true,
 }
 
 // TestParse_NoOrphanFixtures fails when a testdata/*.yaml file is classified

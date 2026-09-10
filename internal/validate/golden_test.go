@@ -50,11 +50,20 @@ var goldenCases = []string{
 	// sort_key_default_and_readonly_exempt, when `default:` alone was still
 	// exempt and it lived in successFixtures) keeps both non-last keys from
 	// that original case: "created_at" carries only `default: now` and now
-	// expects the warning, while "slug" carries only `readonly: true` and
-	// stays silent, so the ReadOnly exemption -- untouched by this issue,
-	// and otherwise untested outside of valid.yaml's non-sort-key "slug" --
-	// is still proven to hold on a non-last key. The last key, "id", is the
-	// pk tiebreaker and stays silent via the PK exemption.
+	// expects the warning, while "slug" carries `readonly: true` and stays
+	// silent, so the ReadOnly exemption -- untouched by this issue, and
+	// otherwise untested outside of valid.yaml's non-sort-key "slug" -- is
+	// still proven to hold on a non-last key. The last key, "id", is the pk
+	// tiebreaker and stays silent via the PK exemption.
+	//
+	// "slug" also carries `default: pending` since issue #52 (spec §6.5's
+	// "combination the validator rejects"): `required: true` plus
+	// `readonly: true` with no `default:` is now a parse-time schema error
+	// on its own, before Validate ever runs, and this fixture's "slug" must
+	// stay `required: true` (a sort key may not be nullable, spec §3.3 rule
+	// 3) to keep testing what it always tested. The added `default:` does
+	// not touch validateSortKeyMutability's exemption, which looks at
+	// PK/ReadOnly/Immutable only, never Default.
 	"sort_key_readonly_exempt_default_warns",
 
 	"filter_json",

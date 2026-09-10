@@ -1,0 +1,4 @@
+lapigo.yaml:5:7: field "author" is required and read-only with no default: the column can never be filled
+   5 |       author: { type: belongsTo, target: user, required: true, readonly: true }
+     |       ^^^^^^
+   add a `default:`, or drop `required:` (spec §6.5)
