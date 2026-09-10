@@ -1,0 +1,11 @@
+# no_list is the matrix fixture in which `list` is ABSENT while the four
+# other endpoints are present -- the one state full.yaml and list_only.yaml
+# together do not reach.
+entities:
+  event:
+    fields:
+      id:         { type: uuid, pk: true }
+      name:       { type: string, required: true }
+      occurred_at: { type: timestamp, required: true }
+    sort: [-id]
+    endpoints: [get, create, update, delete]

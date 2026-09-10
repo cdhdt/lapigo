@@ -1,0 +1,32 @@
+# full is the declaration-matrix fixture in which every declaration-changing
+# option is PRESENT: all five endpoints, an enum field and a belongsTo. It is
+# also the type-coverage fixture -- every scalar of spec §3.2 appears once,
+# nullable and non-nullable, so the model golden pins the whole Go type
+# mapping and the computed import set in one file.
+entities:
+  article:
+    table: articles
+    fields:
+      id:         { type: uuid, pk: true }
+      title:      { type: string, required: true, max: 200 }
+      body:       { type: text }
+      status:     { type: enum, values: [draft, in_progress, published], required: true }
+      slug:       { type: string, unique: true, readonly: true }
+      views:      { type: int, required: true }
+      rank:       { type: bigint }
+      score:      { type: float }
+      price:      { type: decimal }
+      featured:   { type: bool, required: true }
+      created_at: { type: timestamp, required: true, default: now, readonly: true }
+      due_on:     { type: date }
+      metadata:   { type: json }
+      author:     { type: belongsTo, target: user, on_delete: restrict }
+      version:    { type: int, required: true, version: true }
+    sort: [-created_at, -id]
+    filters: [status, author]
+    endpoints: [list, get, create, update, delete]
+  user:
+    fields:
+      id:    { type: uuid, pk: true }
+      email: { type: string, required: true, unique: true }
+    endpoints: [list, get, create, update, delete]
