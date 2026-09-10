@@ -6,9 +6,11 @@ import (
 	"go/token"
 	"path"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/cdhdt/lapigo/internal/ir"
+	"github.com/cdhdt/lapigo/internal/validate"
 )
 
 // declarationsIn parses every rendered file and returns, per Go package, the
@@ -237,6 +239,52 @@ func TestDeclarationMatrix_CoversEveryOptionInBothStates(t *testing.T) {
 			t.Errorf("no fixture in goldenCases has %q absent: every declaration-changing "+
 				"option needs a fixture in both states (spec §5.6)", opt)
 		}
+	}
+}
+
+// TestDeclarationSet_MethodsOnCoveredReceiversAreReserved closes spec §5.6's
+// own "what this does not yet check" (names.go's doc comment), the
+// containment half of the link between declarationSet and
+// internal/validate's reservedMethodNames: every method name declarationSet
+// predicts on a "covered receiver" -- an entity's model type, or its
+// CreateInput/UpdateInput type -- must be reserved there, or a schema field
+// could be given a Go name that collides with a method regenerated code
+// will emit, with internal/validate never the wiser.
+//
+// It stayed vacuously true through step 6: reservedMethodNames is scoped to
+// methods on the model, CreateInput and UpdateInput types specifically (its
+// own doc comment), and hooks live on <Entity>Hooks/Noop<Entity>Hooks,
+// neither of which is a covered receiver. Step 7's Validate (issue #28) is
+// the first method declarationSet ever predicts on one, which is why this
+// test could not have existed, non-vacuously, before this change -- and
+// also why it is scoped to exactly those three receiver shapes per entity,
+// rather than every key in declarationSet's model package: Optional and
+// ValidationError are fixed helper types no schema field is ever named
+// after, so their own methods (Present, Error, ...) are outside
+// reservedMethodNames' stated scope on purpose, not an oversight this test
+// should widen.
+func TestDeclarationSet_MethodsOnCoveredReceiversAreReserved(t *testing.T) {
+	for _, name := range goldenCases {
+		t.Run(name, func(t *testing.T) {
+			schema := loadFixture(t, name)
+			model := declarationSet(schema)[packageModel]
+
+			for _, e := range schema.Entities {
+				for _, receiver := range []string{e.GoName, e.GoName + "CreateInput", e.GoName + "UpdateInput"} {
+					prefix := receiver + "."
+					for _, decl := range model {
+						method, ok := strings.CutPrefix(decl, prefix)
+						if !ok {
+							continue
+						}
+						if !validate.IsReservedMethodName(method) {
+							t.Errorf("declarationSet predicts %s (a method on the covered receiver %q), "+
+								"but internal/validate does not reserve %q", decl, receiver, method)
+						}
+					}
+				}
+			}
+		})
 	}
 }
 

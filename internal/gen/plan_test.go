@@ -36,6 +36,12 @@ func TestPlan_Full(t *testing.T) {
 			Template: "model/optional.go",
 		},
 		{
+			Path:     "internal/gen/model/validate.go",
+			Package:  "model",
+			Imports:  nil,
+			Template: "model/validate.go",
+		},
+		{
 			Path:     "internal/gen/model/article.go",
 			Package:  "model",
 			Imports:  []string{"encoding/json", "github.com/jackc/pgx/v5/pgtype", "time"},
@@ -68,7 +74,7 @@ func TestPlan_Full(t *testing.T) {
 	}
 
 	if len(files) != len(want) {
-		t.Fatalf("plan returned %d files, want %d: %v", len(files), len(want), files)
+		t.Fatalf("plan returned %d files, want %d (%v): %v", len(files), len(want), want, files)
 	}
 	for i, got := range files {
 		w := want[i]
@@ -104,6 +110,7 @@ func TestPlan_OrderFollowsTheSortedEntities(t *testing.T) {
 	}
 	want := []string{
 		"internal/gen/model/optional.go",
+		"internal/gen/model/validate.go",
 		"internal/gen/model/article.go",
 		"internal/gen/model/user.go",
 		"internal/gen/hooks/error.go",
