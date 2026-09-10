@@ -74,6 +74,7 @@ func TestGenerate_FileSet(t *testing.T) {
 		"internal/gen/hooks/error.go",
 		"internal/gen/hooks/article.go",
 		"internal/gen/hooks/user.go",
+		"internal/gen/store/cursor.go",
 	}
 	got := make([]string, 0, len(files))
 	for path := range files {

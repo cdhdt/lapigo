@@ -65,6 +65,26 @@ func TestPlan_Full(t *testing.T) {
 			Imports:  hooksImports,
 			Template: "hooks/entity.go",
 		},
+		{
+			// One file for every listing entity's cursor codec, so its
+			// import set is the union of what their sort keys need:
+			// article sorts on a timestamp and a uuid, user on a uuid
+			// (spec §7.4). TestPlan_StoreCursorFile is what pins the
+			// per-fixture variation of that set.
+			Path:    "internal/gen/store/cursor.go",
+			Package: "store",
+			Imports: []string{
+				"bytes",
+				"encoding/base64",
+				"encoding/json",
+				"errors",
+				modelImportPath(testModulePath),
+				"fmt",
+				pgtypeImport,
+				"time",
+			},
+			Template: "store/cursor.go",
+		},
 	}
 
 	if len(files) != len(want) {
@@ -109,6 +129,7 @@ func TestPlan_OrderFollowsTheSortedEntities(t *testing.T) {
 		"internal/gen/hooks/error.go",
 		"internal/gen/hooks/article.go",
 		"internal/gen/hooks/user.go",
+		"internal/gen/store/cursor.go",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("plan order = %v, want %v", got, want)

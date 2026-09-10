@@ -134,6 +134,48 @@ func declarationSet(s *ir.Schema) map[string][]string {
 	}
 	byPackage[packageHooks] = sorted(hooks)
 
+	// store, as rendered by templates/store_cursor.tmpl (step 7's cursor
+	// codec, spec §7.4): per entity that declares `list`, its fingerprint
+	// constant, its wire and decoded cursor types, and its encoder and
+	// decoder; plus the fixed envelope, encoder and decoder they are built
+	// on.
+	//
+	// The fixed names are appended only when at least one entity lists,
+	// because the file itself is emitted only then (planStoreCursorFiles's
+	// doc comment says why it is not emitted unconditionally the way
+	// model/optional.go is). Predicting them unconditionally would fail
+	// direction 2 of the equality test on a schema that never paginates --
+	// no_list is exactly that fixture.
+	//
+	// The rest of the package -- <Entity>Store and its methods,
+	// <Entity>ListQuery, scan<Entity> -- is still pendingDeclarations', and
+	// so is httpapi in full.
+	var store []string
+	for _, e := range s.Entities {
+		if !e.HasList() {
+			continue
+		}
+		g := e.GoName
+		p := lowerFirst(g)
+		store = append(store,
+			p+"CursorFingerprint",
+			p+"CursorKeys",
+			p+"Cursor",
+			"encode"+g+"Cursor",
+			"decode"+g+"Cursor",
+		)
+	}
+	if len(store) != 0 {
+		store = append(store,
+			"cursorFormatVersion",
+			"ErrInvalidCursor",
+			"cursorEnvelope",
+			"encodeCursor",
+			"decodeCursorKeys",
+		)
+		byPackage[packageStore] = sorted(store)
+	}
+
 	return byPackage
 }
 
@@ -153,11 +195,13 @@ func declarationSet(s *ir.Schema) map[string][]string {
 //
 // What this list deliberately does NOT enumerate: the method sets of the
 // fixed per-package types the spec names without naming their methods --
-// store's cursor encoder, decoder and decode-error type (spec §7.4), and
-// httpapi's router constructor and request-id middleware (spec §6.2, §6.9.6).
-// Their identifiers are not stated anywhere yet, so predicting them here
-// would be inventing a contract rather than recording one; they enter the
-// table with the commit that names them.
+// httpapi's router constructor and request-id middleware (spec §6.2,
+// §6.9.6). Their identifiers are not stated anywhere yet, so predicting them
+// here would be inventing a contract rather than recording one; they enter
+// the table with the commit that names them. Store's cursor codec was the
+// other entry of that list until issue #28 named its identifiers, which is
+// the move this mechanism exists to force: they are in declarationSet now,
+// gated on `list` exactly as the template gates them.
 func pendingDeclarations(s *ir.Schema) map[string][]string {
 	byPackage := map[string][]string{}
 	if s == nil {
@@ -171,8 +215,10 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 	// 7's (issue #28), the method that actually enforces §6.5's "Question
 	// 2", and nothing about hooks needs it.
 	var model []string
-	// store's fixed row is the cursor codec, whose identifiers spec §7.4
-	// does not name; see the doc comment.
+	// store's remaining rows are the store type itself and its methods.
+	// Its fixed row -- the cursor codec of spec §7.4 -- moved into
+	// declarationSet with issue #28, which is why nothing fixed is left
+	// here.
 	var store []string
 	// httpapi's fixed row: respondError is the one identifier spec §6.7
 	// names outright.
