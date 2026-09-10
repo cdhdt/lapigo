@@ -23,9 +23,11 @@ Several of the architecture decisions look restrictive on purpose — cursor-onl
 pagination, no user-overridable templates, no dependencies in generated code.
 They were settled deliberately.
 
-**If you disagree with one, open an issue and make the case.** A pull request
-that quietly reverses a documented decision will be closed, and that is a waste
-of your time rather than a judgement on your idea.
+**If you disagree with one, open an issue and make the case**, using the
+["Challenge a decision"](.github/ISSUE_TEMPLATE/challenge.yml) form — it asks
+which decision, what it costs, and what your alternative costs in turn. A pull
+request that quietly reverses a documented decision will be closed, and that is
+a waste of your time rather than a judgement on your idea.
 
 ## Workflow
 
