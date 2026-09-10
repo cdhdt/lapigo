@@ -1,0 +1,9 @@
+entities:
+  article:
+    fields:
+      id:    { type: uuid, pk: true }
+      limit: { type: belongsTo, target: user }
+    filters: [limit]
+  user:
+    fields:
+      id: { type: uuid, pk: true }

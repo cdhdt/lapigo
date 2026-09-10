@@ -1,0 +1,4 @@
+lapigo.yaml:6:15: filter "limit" has wire name "limit", which is reserved for pagination
+   6 |     filters: [limit]
+     |               ^^^^^
+   `limit` and `after` are reserved query-parameter names for pagination (spec §6.9.4); remove `limit` from `filters`
