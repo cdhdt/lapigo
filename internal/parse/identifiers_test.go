@@ -8,7 +8,7 @@ import (
 
 // TestTableIdentifier_RejectsUnvalidatedText is the regression test for
 // defect 3: `table:` was accepted as free text and reached both an HTTP
-// route pattern (Endpoint.Path) and a SQL identifier with zero validation.
+// route pattern (Entity.Path) and a SQL identifier with zero validation.
 // Every case here parsed with zero diagnostics before this test existed;
 // each must now produce exactly one diagnostic naming the table itself.
 func TestTableIdentifier_RejectsUnvalidatedText(t *testing.T) {

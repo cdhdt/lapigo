@@ -139,11 +139,11 @@ func (r *resolver) buildEntity(name source.At[string], body ast.Node) (*ir.Entit
 		if indexesNode != nil {
 			indexes = r.buildPendingIndexes(indexesNode, name.Value)
 		}
-		e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
+		e.Endpoints = r.buildEndpoints(endpointsNode, name.Value)
 		return e, relations, sortKeys, sortNode != nil, filters, indexes
 	}
 
-	e.Endpoints = r.buildEndpoints(endpointsNode, name.Value, e.Table)
+	e.Endpoints = r.buildEndpoints(endpointsNode, name.Value)
 	return e, nil, nil, false, nil, nil
 }
 

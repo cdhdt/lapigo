@@ -40,9 +40,8 @@ var endpointKeywordNames = func() []string {
 	return out
 }()
 
-// defaultEndpointKinds is every CRUD operation, in the fixed order Path
-// computation and rendering expect. Used when an entity omits `endpoints:`
-// entirely.
+// defaultEndpointKinds is every CRUD operation, in the fixed order rendering
+// expects. Used when an entity omits `endpoints:` entirely.
 //
 // Design decision: the spec documents `endpoints: [list, get]` as an
 // explicit *opt-out* of `create`/`update`/`delete` (spec §6.2, escape hatch
@@ -58,18 +57,17 @@ var defaultEndpointKinds = []ir.EndpointKind{
 // Endpoints, in the order written -- or, when node is nil (the key was
 // omitted), the full CRUD set in defaultEndpointKinds order.
 //
-// Design decision: an Endpoint's Path is not specified anywhere in spec §3
-// (the schema format) -- it belongs to routing, a later generation phase.
-// Since ir.Endpoint.Path is nonetheless part of the IR this package must
-// produce, it is computed here from a convention the spec's own prose
-// examples use elsewhere (§6.2's "GET /items/{id}"): the collection path
-// (table name) for List/Create, and that path plus "/{id}" for
-// Get/Update/Delete.
-func (r *resolver) buildEndpoints(node ast.Node, entityName, table string) []ir.Endpoint {
+// Design decision: an Endpoint no longer carries a Path -- ir.Entity.Path
+// computes it on demand from Kind, Entity.Table and Entity.PK.Column, none
+// of which this resolver step can name from just an EndpointKind. A
+// belongsTo relation's PK.Column is only finalised in
+// resolvePendingRelations' fixed point, which runs after this method, so
+// computing a path here would risk freezing a placeholder (issue #47).
+func (r *resolver) buildEndpoints(node ast.Node, entityName string) []ir.Endpoint {
 	if node == nil {
 		out := make([]ir.Endpoint, len(defaultEndpointKinds))
 		for i, k := range defaultEndpointKinds {
-			out[i] = ir.Endpoint{Kind: k, Path: endpointPath(k, table)}
+			out[i] = ir.Endpoint{Kind: k}
 		}
 		return out
 	}
@@ -103,19 +101,7 @@ func (r *resolver) buildEndpoints(node ast.Node, entityName, table string) []ir.
 			continue
 		}
 		seen[k] = true
-		out = append(out, ir.Endpoint{Kind: k, Path: endpointPath(k, table)})
+		out = append(out, ir.Endpoint{Kind: k})
 	}
 	return out
-}
-
-// endpointPath computes the HTTP path for one endpoint kind on a table --
-// see buildEndpoints' doc comment for why this convention lives here rather
-// than being read from the schema.
-func endpointPath(k ir.EndpointKind, table string) string {
-	switch k {
-	case ir.EndpointList, ir.EndpointCreate:
-		return "/" + table
-	default:
-		return "/" + table + "/{id}"
-	}
 }
