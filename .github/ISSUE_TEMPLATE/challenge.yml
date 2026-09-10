@@ -1,0 +1,53 @@
+name: Challenge a decision
+description: Argue that a documented architecture decision, or a settled point in the specification, should change.
+title: "[Challenge]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For arguing against something already decided — not for a bug or a task.
+        `CLAUDE.md`'s "Non-negotiable architecture decisions" are numbered 1-7;
+        spec §12 records why each point there was already reversed once, from
+        revision 1, and spec §9 lists what is still open rather than settled.
+        Make the case against that recorded reasoning, not against a guess at it.
+
+        This is a discussion, not a ticket: no branch starts from it, and it
+        carries no Journal. If a maintainer agrees it reopens a live question,
+        they will label it `decision` and it follows this project's normal
+        process from there.
+
+  - type: input
+    id: decision
+    attributes:
+      label: Which decision
+      description: >-
+        Name a specific target: a numbered decision from `CLAUDE.md` ("4 —
+        cursor pagination only"), a row of spec §12 you think was reversed for
+        the wrong reason, or an open question from spec §9 you think should be
+        closed differently than it's trending.
+      placeholder: e.g. CLAUDE.md decision 4 — cursor pagination only, no offset, no COUNT
+    validations:
+      required: true
+
+  - type: textarea
+    id: cost
+    attributes:
+      label: What it costs
+      description: >-
+        What the decision costs, concretely — a query that gets slow, a use
+        case it rules out, a benchmark, a real schema it fits badly. "X is bad"
+        is not a case; a scenario or a number is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternative
+    attributes:
+      label: What you propose, and what that costs
+      description: >-
+        What you'd do instead, and its own cost — cursor pagination was chosen
+        over offset pagination for reasons CLAUDE.md states with numbers;
+        an alternative that doesn't name its own trade-off isn't comparable to
+        the one it's replacing.
+    validations:
+      required: true
