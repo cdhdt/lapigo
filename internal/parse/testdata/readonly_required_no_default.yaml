@@ -1,0 +1,5 @@
+entities:
+  article:
+    fields:
+      id:  { type: uuid, pk: true }
+      tag: { type: string, required: true, readonly: true }
