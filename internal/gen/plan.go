@@ -96,7 +96,7 @@ func plan(s *ir.Schema, modulePath string) ([]OutputFile, error) {
 		return nil, fmt.Errorf("gen: plan called on a nil schema")
 	}
 
-	files := []OutputFile{planModelOptionalFile()}
+	files := []OutputFile{planModelOptionalFile(), planModelValidateFile()}
 	for _, e := range s.Entities {
 		f, err := planModelFile(e)
 		if err != nil {
@@ -133,6 +133,30 @@ func planModelOptionalFile() OutputFile {
 		Data: fileData{
 			Package: packageModel,
 			Imports: imports,
+		},
+	}
+}
+
+// planModelValidateFile builds the OutputFile for model's other fixed
+// declaration, ValidationError (spec §6.5, §5.6's model fixed row; issue
+// #28). It needs no Entity and no imports: Error() returns a bare literal,
+// and every per-entity Validate method carries its own messages as literal
+// strings computed at generation time (validate.go), never with
+// fmt.Sprintf in the generated file.
+//
+// Always emitted, the same reasoning as planModelOptionalFile's: gating it
+// on HasCreate()/HasUpdate() across every entity would be a second,
+// drifting copy of the condition each per-entity Validate method already
+// applies on its own, and an unreferenced package-level type costs a
+// generated project nothing.
+func planModelValidateFile() OutputFile {
+	return OutputFile{
+		Path:     genRoot + "/" + packageModel + "/validate.go",
+		Package:  packageModel,
+		Imports:  nil,
+		Template: "model/validate.go",
+		Data: fileData{
+			Package: packageModel,
 		},
 	}
 }

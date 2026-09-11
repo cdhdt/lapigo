@@ -47,6 +47,22 @@ var reservedMethodNameSet = func() map[string]bool {
 	return m
 }()
 
+// IsReservedMethodName reports whether name is one of reservedMethodNames.
+//
+// Exported only for internal/gen's containment check (spec §5.6's own "what
+// this does not yet check", closed by issue #28): "reservedMethodNames is
+// deliberately a superset of what is emitted" is a claim, not yet
+// mechanically enforced anywhere before that issue, and internal/gen is the
+// one package positioned to enforce it -- it is the only place both halves
+// (what a template actually emits, and what this list reserves) are ever
+// in scope together. This does not expose reservedMethodNames itself: a
+// membership query is all the containment check needs, and it is also all
+// that keeps this package's own list private to the check that reads
+// individual names, rather than a second copy of the slice living in gen.
+func IsReservedMethodName(name string) bool {
+	return reservedMethodNameSet[name]
+}
+
 // entityMember is one contributor to an entity's Go struct namespace: either
 // a plain *ir.Field or a belongsTo relation, both of which become a field on
 // the entity's generated model struct.

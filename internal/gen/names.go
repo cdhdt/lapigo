@@ -36,22 +36,21 @@ import (
 //     one entry in the table -- the one whose entity name lands at the end.
 //     Nothing here matches on suffixes; every name is built from its parts.
 //
-// What this does NOT yet check, and when it will: internal/validate's
+// The containment check this file used to leave open: internal/validate's
 // reservedMethodNames is deliberately a superset of what is emitted (spec
-// §5.6), so the remaining half of the link is the containment
-// "every method name emitted here is reserved there". Today it is still
-// vacuously true, and step 6 (hooks) does not change that: reservedMethodNames
-// is scoped to methods on the model, CreateInput and UpdateInput types --
-// the structs that carry an entity's fields as Go struct fields, per its own
-// doc comment -- and a hook lives on <Entity>Hooks and Noop<Entity>Hooks,
-// neither of which carries a field. §6.3's BeforeCreate has no collision
-// surface with a schema field named "before_create": they are methods on
-// different types in a different package. Step 7's Validate is the first
-// method this file will predict on a covered receiver (CreateInput,
-// UpdateInput), and is therefore the step that must add the containment
-// check and the first one at which it could fail; nothing here can assert it
-// earlier without recreating, in this package, the very list it would be
-// checking.
+// §5.6), and the remaining half of the link is "every method name emitted
+// here on a covered receiver is reserved there". It stayed vacuously true
+// through step 6 (hooks) -- reservedMethodNames is scoped to methods on the
+// model, CreateInput and UpdateInput types, the structs that carry an
+// entity's fields as Go struct fields, per its own doc comment, and a hook
+// lives on <Entity>Hooks and Noop<Entity>Hooks, neither of which carries a
+// field -- but step 7's Validate (issue #28) is the first method this file
+// predicts on a covered receiver, so it is the step that closes it:
+// TestDeclarationSet_MethodsOnCoveredReceiversAreReserved (names_test.go)
+// checks every "<GoName|GoName+CreateInput|GoName+UpdateInput>.Method" entry
+// declarationSet produces against internal/validate.IsReservedMethodName,
+// the minimal membership query exported for exactly this, so this package
+// never carries a second copy of validate's own list.
 
 // declarationSet returns, per generated package, every top-level declaration
 // the templates emit for s -- types, functions, variables, constants and
@@ -72,16 +71,16 @@ func declarationSet(s *ir.Schema) map[string][]string {
 		return byPackage
 	}
 
-	// model, as rendered by templates/model_entity.tmpl and
-	// templates/model_optional.tmpl: the fixed Optional[T] and its six
-	// methods (spec §6.5, §5.6's model fixed row), always present; the
-	// entity struct and, per enum field, a generated type plus one constant
-	// per declared member; and, gated on HasCreate()/HasUpdate(), the
-	// ECreateInput/EUpdateInput struct TYPES that spec §6.3's hook
-	// signatures require to exist (spec §10's amended step 6 row -- see
-	// input.go's own doc comment). Their Validate methods are not here:
-	// Validate is step 7's (issue #28) and stays in pendingDeclarations,
-	// below, until that commit.
+	// model, as rendered by templates/model_entity.tmpl,
+	// templates/model_optional.tmpl and templates/model_validate.tmpl: the
+	// fixed Optional[T] and its six methods (spec §6.5, §5.6's model fixed
+	// row), the fixed ValidationError and its Error method (spec §6.5, §6.7;
+	// issue #28), always present; the entity struct and, per enum field, a
+	// generated type plus one constant per declared member; and, gated on
+	// HasCreate()/HasUpdate(), the ECreateInput/EUpdateInput struct types
+	// (spec §10's amended step 6 row) plus their Validate methods -- the row
+	// step 7 (issue #28) moves out of pendingDeclarations below, now that
+	// model_entity.tmpl actually renders them.
 	model := []string{
 		"Optional",
 		"Optional.Present",
@@ -90,6 +89,8 @@ func declarationSet(s *ir.Schema) map[string][]string {
 		"Optional.Set",
 		"Optional.SetNull",
 		"Optional.UnmarshalJSON",
+		"ValidationError",
+		"ValidationError.Error",
 	}
 	for _, e := range s.Entities {
 		g := e.GoName
@@ -101,10 +102,10 @@ func declarationSet(s *ir.Schema) map[string][]string {
 			}
 		}
 		if e.HasCreate() {
-			model = append(model, g+"CreateInput")
+			model = append(model, g+"CreateInput", g+"CreateInput.Validate")
 		}
 		if e.HasUpdate() {
-			model = append(model, g+"UpdateInput")
+			model = append(model, g+"UpdateInput", g+"UpdateInput.Validate")
 		}
 	}
 	byPackage[packageModel] = sorted(model)
@@ -164,13 +165,11 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		return byPackage
 	}
 
-	// model's remaining rows: the two input types' Validate methods (spec
-	// §5.6, §6.5). The types themselves, and the fixed Optional[T], are in
-	// declarationSet now -- step 6 needed them to exist for hooks to
-	// type-check (spec §10's amended step 6 row) -- but Validate is step
-	// 7's (issue #28), the method that actually enforces §6.5's "Question
-	// 2", and nothing about hooks needs it.
-	var model []string
+	// model has no remaining rows: the two input types' Validate methods
+	// (spec §5.6, §6.5) moved into declarationSet with this commit (issue
+	// #28) -- the only row this table predicted for model, now that
+	// model_entity.tmpl actually renders them.
+	//
 	// store's fixed row is the cursor codec, whose identifiers spec §7.4
 	// does not name; see the doc comment.
 	var store []string
@@ -180,13 +179,6 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 
 	for _, e := range s.Entities {
 		g := e.GoName
-
-		if e.HasCreate() {
-			model = append(model, g+"CreateInput.Validate")
-		}
-		if e.HasUpdate() {
-			model = append(model, g+"UpdateInput.Validate")
-		}
 
 		store = append(store, g+"Store", "scan"+g)
 		if e.HasList() {
@@ -206,7 +198,6 @@ func pendingDeclarations(s *ir.Schema) map[string][]string {
 		}
 	}
 
-	byPackage[packageModel] = sorted(model)
 	byPackage[packageStore] = sorted(store)
 	byPackage[packageHTTPAPI] = sorted(httpapi)
 	return byPackage

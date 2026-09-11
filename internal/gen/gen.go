@@ -148,14 +148,16 @@ func render(t *template.Template, f OutputFile) ([]byte, error) {
 // text: quoting, comment sanitisation, the shape of an import block, and the
 // selection of an entity's enum fields.
 var funcMap = template.FuncMap{
-	"goString":           goString,
-	"comment":            comment,
-	"importBlock":        importBlock,
-	"jsonTag":            jsonTag,
-	"enumFields":         enumFields,
-	"hookOperations":     hookOperations,
-	"createInputMembers": createInputMembers,
-	"updateInputMembers": updateInputMembers,
+	"goString":              goString,
+	"comment":               comment,
+	"importBlock":           importBlock,
+	"jsonTag":               jsonTag,
+	"enumFields":            enumFields,
+	"hookOperations":        hookOperations,
+	"createInputMembers":    createInputMembers,
+	"updateInputMembers":    updateInputMembers,
+	"createValidateMembers": createValidateMembers,
+	"updateValidateMembers": updateValidateMembers,
 }
 
 // goString renders s as a Go string literal, quotes included (spec §5.1).

@@ -69,6 +69,7 @@ func TestGenerate_FileSet(t *testing.T) {
 
 	want := []string{
 		"internal/gen/model/optional.go",
+		"internal/gen/model/validate.go",
 		"internal/gen/model/article.go",
 		"internal/gen/model/user.go",
 		"internal/gen/hooks/error.go",

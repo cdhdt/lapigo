@@ -15,8 +15,18 @@ if blocks selecting whether an input type exists at all
 not a per-field decision the way membership within the struct is (that one
 is createInputMembers/updateInputMembers, in Go, in input.go).
 
-Validate() error is NOT rendered here: it is step 7's (issue #28), and a
-struct of Optional[T] members type-checks without it.
+Validate() error IS rendered here, right after each struct (issue #28,
+spec §6.5): it is the method that actually enforces which members are
+mandatory, plus the Go half of `max:` (spec §3.1), enum membership and the
+explicit-null-on-a-non-nullable-member rule (spec §6.6). Which checks apply
+to which member, and every message a check can emit, are decided in Go, in
+validate.go's createValidateMembers/updateValidateMembers -- never
+re-derived here from raw field flags, for the same §5.1 reason
+createInputMembers/updateInputMembers exist. The per-member rendering itself
+is factored into the "model/validate_member" template (templates/
+model_validate.tmpl) because its shape does not depend on which input type
+it runs against; IsCreate, already on each validateMember, carries the one
+difference that does (spec §6.5's differing "missing" test).
 */ -}}
 {{- define "model/entity.go" -}}
 {{template "header" .}}
@@ -63,6 +73,23 @@ type {{.GoName}}CreateInput struct {
 	{{.GoName}} Optional[{{.ValueGoType}}] {{.Tag}}
 {{- end}}
 }
+
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. It runs before a transaction is opened (spec §6.5's fixed
+// handler order: decode, Validate, open the transaction, BeforeX), so by the
+// time BeforeCreate runs, every mandatory member is Present() and not
+// IsNull().
+func (in *{{.GoName}}CreateInput) Validate() error {
+	fields := map[string]string{}
+{{range createValidateMembers .}}{{template "model/validate_member" .}}
+{{end -}}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
+}
 {{- end}}
 {{- if .HasUpdate}}
 
@@ -74,6 +101,22 @@ type {{.GoName}}UpdateInput struct {
 {{- range updateInputMembers .}}
 	{{.GoName}} Optional[{{.ValueGoType}}] {{.Tag}}
 {{- end}}
+}
+
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. An absent member means "unchanged" (spec §6.6) and is
+// never an error here, mandatory or not; only an explicit null against a
+// mandatory member, or against one whose column is NOT NULL, is rejected.
+func (in *{{.GoName}}UpdateInput) Validate() error {
+	fields := map[string]string{}
+{{range updateValidateMembers .}}{{template "model/validate_member" .}}
+{{end -}}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
 }
 {{- end}}
 {{- end}}

@@ -36,6 +36,29 @@ type EventCreateInput struct {
 	OccurredAt Optional[time.Time] `json:"occurred_at"`
 }
 
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. It runs before a transaction is opened (spec §6.5's fixed
+// handler order: decode, Validate, open the transaction, BeforeX), so by the
+// time BeforeCreate runs, every mandatory member is Present() and not
+// IsNull().
+func (in *EventCreateInput) Validate() error {
+	fields := map[string]string{}
+
+	if !in.Name.Present() || in.Name.IsNull() {
+		fields["name"] = "required"
+	}
+
+	if !in.OccurredAt.Present() || in.OccurredAt.IsNull() {
+		fields["occurred_at"] = "required"
+	}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
+}
+
 // EventUpdateInput is the generated request body for Event's update
 // endpoint (spec §6.5, §6.6). Absent means unchanged; Optional[T]'s IsNull is
 // what distinguishes that from an explicit null, which PATCH semantics
@@ -43,4 +66,26 @@ type EventCreateInput struct {
 type EventUpdateInput struct {
 	Name       Optional[string]    `json:"name"`
 	OccurredAt Optional[time.Time] `json:"occurred_at"`
+}
+
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. An absent member means "unchanged" (spec §6.6) and is
+// never an error here, mandatory or not; only an explicit null against a
+// mandatory member, or against one whose column is NOT NULL, is rejected.
+func (in *EventUpdateInput) Validate() error {
+	fields := map[string]string{}
+
+	if in.Name.IsNull() {
+		fields["name"] = "required"
+	}
+
+	if in.OccurredAt.IsNull() {
+		fields["occurred_at"] = "required"
+	}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
 }

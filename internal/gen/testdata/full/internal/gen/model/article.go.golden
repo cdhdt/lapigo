@@ -71,6 +71,49 @@ type ArticleCreateInput struct {
 	AuthorID  Optional[pgtype.UUID]     `json:"author_id"`
 }
 
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. It runs before a transaction is opened (spec §6.5's fixed
+// handler order: decode, Validate, open the transaction, BeforeX), so by the
+// time BeforeCreate runs, every mandatory member is Present() and not
+// IsNull().
+func (in *ArticleCreateInput) Validate() error {
+	fields := map[string]string{}
+
+	if !in.Title.Present() || in.Title.IsNull() {
+		fields["title"] = "required"
+	} else if v, ok := in.Title.Get(); ok {
+
+		if len(v) > 200 {
+			fields["title"] = "must be at most 200 characters"
+		}
+	}
+
+	if !in.Status.Present() || in.Status.IsNull() {
+		fields["status"] = "required"
+	} else if v, ok := in.Status.Get(); ok {
+
+		switch v {
+		case ArticleStatusDraft, ArticleStatusInProgress, ArticleStatusPublished:
+		default:
+			fields["status"] = "must be one of: draft, in_progress, published"
+		}
+	}
+
+	if !in.Views.Present() || in.Views.IsNull() {
+		fields["views"] = "required"
+	}
+
+	if !in.Featured.Present() || in.Featured.IsNull() {
+		fields["featured"] = "required"
+	}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
+}
+
 // ArticleUpdateInput is the generated request body for Article's update
 // endpoint (spec §6.5, §6.6). Absent means unchanged; Optional[T]'s IsNull is
 // what distinguishes that from an explicit null, which PATCH semantics
@@ -89,4 +132,46 @@ type ArticleUpdateInput struct {
 	DueOn     Optional[time.Time]       `json:"due_on"`
 	Metadata  Optional[json.RawMessage] `json:"metadata"`
 	AuthorID  Optional[pgtype.UUID]     `json:"author_id"`
+}
+
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. An absent member means "unchanged" (spec §6.6) and is
+// never an error here, mandatory or not; only an explicit null against a
+// mandatory member, or against one whose column is NOT NULL, is rejected.
+func (in *ArticleUpdateInput) Validate() error {
+	fields := map[string]string{}
+
+	if in.Title.IsNull() {
+		fields["title"] = "required"
+	} else if v, ok := in.Title.Get(); ok {
+
+		if len(v) > 200 {
+			fields["title"] = "must be at most 200 characters"
+		}
+	}
+
+	if in.Status.IsNull() {
+		fields["status"] = "required"
+	} else if v, ok := in.Status.Get(); ok {
+
+		switch v {
+		case ArticleStatusDraft, ArticleStatusInProgress, ArticleStatusPublished:
+		default:
+			fields["status"] = "must be one of: draft, in_progress, published"
+		}
+	}
+
+	if in.Views.IsNull() {
+		fields["views"] = "required"
+	}
+
+	if in.Featured.IsNull() {
+		fields["featured"] = "required"
+	}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
 }

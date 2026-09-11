@@ -1,0 +1,89 @@
+{{- /*
+model/validate.go renders model's other fixed, schema-independent
+declaration (spec §6.5, §5.6's model fixed row): ValidationError, the type
+Validate returns.
+
+It is model's own type, not *hooks.Error: hooks imports model for every
+hook signature (spec §6.3), so a Validate that returned *hooks.Error would
+close that package back on itself. httpapi (step 8) imports both and maps
+this to a 422 validation_failed envelope (spec §6.7); Fields is keyed by
+wire name (Field.Column, spec §6.9.2), matching the envelope's own `fields`
+map directly, with no translation step in between.
+
+Always emitted, the same reason model/optional.go always is: gating it on
+whether any entity in the schema has HasCreate()/HasUpdate() would be a
+second, drifting copy of the condition each per-entity Validate method
+already applies on its own, for no benefit -- Go does not complain about an
+unreferenced package-level type.
+
+This file also carries "model/validate_member", the per-member check
+template.tmpl's Create/Update Validate methods both invoke it: the shape of
+a check (missing, null-not-allowed, or a bare value check, each with an
+optional length/enum tail) is the same regardless of which input type it
+runs against, and IsCreate is the one bit that already carries the
+difference (spec §6.5's differing "missing" test) into the data a single
+template can render from.
+*/ -}}
+{{- define "model/validate.go" -}}
+{{template "header" .}}
+// ValidationError is returned by a generated Validate method when it rejects
+// a request: a missing mandatory member, a string over its declared max
+// length, a value outside a declared enum, or an explicit null against a
+// member whose column does not accept one (spec §6.5, §3.1, §6.6). Fields is
+// keyed by wire name -- Field.Column, the same vocabulary used everywhere
+// else a field is named on the wire (spec §6.9.2) -- and its values are
+// short, client-facing reasons such as "required" or "must be one of: draft,
+// published".
+//
+// This is model's own type, not *hooks.Error: hooks imports model for every
+// hook signature (spec §6.3), so a Validate returning *hooks.Error would
+// close that import back on itself. httpapi maps this to a 422
+// validation_failed envelope (spec §6.7); a hook's own *hooks.Error keeps
+// its own status through a separate errors.As branch.
+type ValidationError struct {
+	Fields map[string]string
+}
+
+// Error implements the error interface. It is meant for a log line, never
+// for an HTTP response -- httpapi builds the response straight from Fields,
+// not from this string, the same split hooks.Error's own Error method
+// documents.
+func (e *ValidationError) Error() string {
+	return "validation failed"
+}
+{{- end -}}
+
+{{- define "model/validate_member" -}}
+{{- if .Mandatory}}
+	if {{if .IsCreate}}!in.{{.GoName}}.Present() || in.{{.GoName}}.IsNull(){{else}}in.{{.GoName}}.IsNull(){{end}} {
+		fields["{{.Column}}"] = "required"
+	}{{if or .HasMax .IsEnum}} else if v, ok := in.{{.GoName}}.Get(); ok {
+{{template "model/validate_value_check" .}}
+	}{{end}}
+{{- else if .NullCheck}}
+	if in.{{.GoName}}.IsNull() {
+		fields["{{.Column}}"] = "must not be null"
+	}{{if or .HasMax .IsEnum}} else if v, ok := in.{{.GoName}}.Get(); ok {
+{{template "model/validate_value_check" .}}
+	}{{end}}
+{{- else}}
+	if v, ok := in.{{.GoName}}.Get(); ok {
+{{template "model/validate_value_check" .}}
+	}
+{{- end}}
+{{- end -}}
+
+{{- define "model/validate_value_check" -}}
+{{- if .HasMax}}
+		if len(v) > {{.Max}} {
+			fields["{{.Column}}"] = {{goString .MaxMessage}}
+		}
+{{- end}}
+{{- if .IsEnum}}
+		switch v {
+		case {{range $i, $ev := .EnumValues}}{{if $i}}, {{end}}{{$.EnumGoType}}{{$ev.GoName}}{{end}}:
+		default:
+			fields["{{.Column}}"] = {{goString .EnumMessage}}
+		}
+{{- end}}
+{{- end -}}

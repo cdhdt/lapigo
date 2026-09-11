@@ -32,10 +32,47 @@ type UserCreateInput struct {
 	Email Optional[string] `json:"email"`
 }
 
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. It runs before a transaction is opened (spec §6.5's fixed
+// handler order: decode, Validate, open the transaction, BeforeX), so by the
+// time BeforeCreate runs, every mandatory member is Present() and not
+// IsNull().
+func (in *UserCreateInput) Validate() error {
+	fields := map[string]string{}
+
+	if !in.Email.Present() || in.Email.IsNull() {
+		fields["email"] = "required"
+	}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
+}
+
 // UserUpdateInput is the generated request body for User's update
 // endpoint (spec §6.5, §6.6). Absent means unchanged; Optional[T]'s IsNull is
 // what distinguishes that from an explicit null, which PATCH semantics
 // require and a pointer cannot express (spec §6.5, §13).
 type UserUpdateInput struct {
 	Email Optional[string] `json:"email"`
+}
+
+// Validate reports whether in satisfies spec §6.5's "Question 2"
+// (mandatory members), §3.1's `max:` and enum-membership checks, and §6.6's
+// rule that an explicit null is rejected against a member whose column does
+// not accept one. An absent member means "unchanged" (spec §6.6) and is
+// never an error here, mandatory or not; only an explicit null against a
+// mandatory member, or against one whose column is NOT NULL, is rejected.
+func (in *UserUpdateInput) Validate() error {
+	fields := map[string]string{}
+
+	if in.Email.IsNull() {
+		fields["email"] = "required"
+	}
+	if len(fields) != 0 {
+		return &ValidationError{Fields: fields}
+	}
+	return nil
 }
